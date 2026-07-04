@@ -1,6 +1,11 @@
+# Production stack. No source bind-mounts, no hot reload, restart on failure,
+# frontend on host port 80. Run with:
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+# Put TLS in front (a platform load balancer, or Caddy/Traefik) before exposing.
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -9,24 +14,19 @@ services:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 10
 
   backend:
     build: ./backend
+    restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL}
       IMAGE_DIR: ${IMAGE_DIR}
     volumes:
       - images:/data/images
-      # Dev: mount source + hot reload so backend changes apply without rebuild.
-      - ./backend/app:/app/app
-      - ./backend/tests:/app/tests
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    ports:
-      # Exposed for host dev mode (Vite proxy). Only reachable on localhost.
-      - "8000:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 10s
@@ -38,23 +38,14 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     environment:
       BASIC_AUTH_USER: ${BASIC_AUTH_USER}
       BASIC_AUTH_PASS: ${BASIC_AUTH_PASS}
     ports:
-      - "8090:80"
+      - "80:80"
     depends_on:
       - backend
-
-  ngrok:
-    image: ngrok/ngrok:latest
-    command: http frontend:80
-    environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
-    ports:
-      - "4040:4040"
-    depends_on:
-      - frontend
 
 volumes:
   pgdata:

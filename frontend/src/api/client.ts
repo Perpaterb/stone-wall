@@ -231,18 +231,32 @@ export function cropUrl(s: Stone): string | null {
   return s.crop_path ? `/api/images/${s.crop_path}` : null;
 }
 
+export interface UploadOpts {
+  min_side_cm?: number;
+  max_side_cm?: number;
+  px_per_cm?: number;
+  threshold_mode?: string;
+  invert?: boolean;
+}
+
 export async function uploadPhoto(
   projectId: string,
   file: File,
   spanX: number,
   spanY: number,
-  storage: string
+  storage: string,
+  opts: UploadOpts = {}
 ): Promise<PhotoResult> {
   const fd = new FormData();
   fd.append("file", file);
   fd.append("span_x_cm", String(spanX));
   fd.append("span_y_cm", String(spanY));
   fd.append("storage_location", storage);
+  if (opts.min_side_cm != null) fd.append("min_side_cm", String(opts.min_side_cm));
+  if (opts.max_side_cm != null) fd.append("max_side_cm", String(opts.max_side_cm));
+  if (opts.px_per_cm != null) fd.append("px_per_cm", String(opts.px_per_cm));
+  if (opts.threshold_mode) fd.append("threshold_mode", opts.threshold_mode);
+  if (opts.invert != null) fd.append("invert", String(opts.invert));
   const res = await fetch(`${BASE}/projects/${projectId}/photos`, {
     method: "POST",
     body: fd,

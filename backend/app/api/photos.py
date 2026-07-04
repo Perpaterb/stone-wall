@@ -41,6 +41,11 @@ async def upload_photo(
     span_x_cm: float = Form(100.0),
     span_y_cm: float = Form(100.0),
     storage_location: str = Form(""),
+    min_side_cm: float = Form(8.0),
+    max_side_cm: float = Form(45.0),
+    px_per_cm: float = Form(4.0),
+    threshold_mode: str = Form("otsu"),
+    invert: bool = Form(False),
     db: Session = Depends(get_db),
 ):
     project = db.get(Project, project_id)
@@ -48,8 +53,19 @@ async def upload_photo(
         raise HTTPException(status_code=404, detail="Project not found")
 
     data = await file.read()
+    if not data:
+        raise HTTPException(status_code=422, detail="Empty upload")
     try:
-        result = process_photo(data, span_x_cm, span_y_cm)
+        result = process_photo(
+            data,
+            span_x_cm,
+            span_y_cm,
+            px_per_cm=px_per_cm,
+            min_side_cm=min_side_cm,
+            max_side_cm=max_side_cm,
+            threshold_mode=threshold_mode,
+            invert=invert,
+        )
     except CataloguerError as e:
         raise HTTPException(status_code=422, detail=str(e))
 

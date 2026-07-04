@@ -31,6 +31,18 @@ def _detect_markers(gray: np.ndarray) -> dict:
     return found
 
 
+def _binarize(gray: np.ndarray, mode: str, invert: bool) -> np.ndarray:
+    if mode == "adaptive":
+        th = cv2.adaptiveThreshold(
+            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 51, 5
+        )
+    else:
+        _, th = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if invert:
+        th = cv2.bitwise_not(th)
+    return th
+
+
 def _crop_rotated(img: np.ndarray, rect) -> np.ndarray:
     (cx, cy), (w, h), angle = rect
     if w < h:
@@ -52,11 +64,18 @@ def process_photo(
     px_per_cm: float = 4.0,
     min_side_cm: float = 8.0,
     max_side_cm: float = 45.0,
+    threshold_mode: str = "otsu",
+    invert: bool = False,
 ) -> dict:
+    if span_x_cm <= 0 or span_y_cm <= 0:
+        raise CataloguerError("Marker span must be positive")
+
     arr = np.frombuffer(image_bytes, dtype=np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         raise CataloguerError("Could not decode image")
+    if max(img.shape[:2]) < 200:
+        raise CataloguerError("Image is too small to measure reliably")
 
     # Cap resolution for stable, fast detection.
     max_dim = max(img.shape[:2])
@@ -91,11 +110,14 @@ def process_photo(
     hmat = cv2.getPerspectiveTransform(src, dst)
     out_w = int(round(span_x_cm * ppc))
     out_h = int(round(span_y_cm * ppc))
+    if out_w < 10 or out_h < 10:
+        raise CataloguerError("Marker geometry produced a degenerate warp")
     warped = cv2.warpPerspective(img, hmat, (out_w, out_h))
     warped_gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
 
-    # Pale stones on a dark sheet: Otsu, foreground bright.
-    _, th = cv2.threshold(warped_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    # Pale stones on a dark sheet: bright foreground. Adaptive + invert cover
+    # trickier lighting / dark-stones-on-light cases.
+    th = _binarize(warped_gray, threshold_mode, invert)
     kernel = np.ones((3, 3), np.uint8)
     th = cv2.morphologyEx(th, cv2.MORPH_OPEN, kernel, iterations=2)
     th = cv2.morphologyEx(th, cv2.MORPH_CLOSE, kernel, iterations=2)

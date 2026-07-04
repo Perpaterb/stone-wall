@@ -12,6 +12,11 @@ export default function AddStonesView() {
   const [spanX, setSpanX] = useState(100);
   const [spanY, setSpanY] = useState(100);
   const [storage, setStorage] = useState("");
+  const [advanced, setAdvanced] = useState(false);
+  const [minSide, setMinSide] = useState(8);
+  const [maxSide, setMaxSide] = useState(45);
+  const [thresholdMode, setThresholdMode] = useState("otsu");
+  const [invert, setInvert] = useState(false);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [result, setResult] = useState<PhotoResult | null>(null);
@@ -25,7 +30,12 @@ export default function AddStonesView() {
     setResult(null);
     setCands([]);
     try {
-      const r = await uploadPhoto(projectId, file, spanX, spanY, storage);
+      const r = await uploadPhoto(projectId, file, spanX, spanY, storage, {
+        min_side_cm: minSide,
+        max_side_cm: maxSide,
+        threshold_mode: thresholdMode,
+        invert,
+      });
       setResult(r);
       setCands(r.stones.map((s) => ({ ...s, keep: true })));
       setStatus(`Detected ${r.detected} stones. Review, then confirm.`);
@@ -88,7 +98,22 @@ export default function AddStonesView() {
           Photo<br />
           <input type="file" accept="image/*" capture="environment" onChange={onFile} disabled={busy} />
         </label>
+        <button type="button" onClick={() => setAdvanced((a) => !a)}>{advanced ? "Hide" : "Tuning"}</button>
       </div>
+
+      {advanced && (
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap", margin: "0 0 1rem", padding: 12, border: "1px dashed #ccc", borderRadius: 8, fontSize: 13 }}>
+          <label>min side (cm)<br /><input type="number" value={minSide} onChange={(e) => setMinSide(parseFloat(e.target.value))} style={{ width: 70 }} /></label>
+          <label>max side (cm)<br /><input type="number" value={maxSide} onChange={(e) => setMaxSide(parseFloat(e.target.value))} style={{ width: 70 }} /></label>
+          <label>threshold<br />
+            <select value={thresholdMode} onChange={(e) => setThresholdMode(e.target.value)}>
+              <option value="otsu">otsu (even light)</option>
+              <option value="adaptive">adaptive (uneven light)</option>
+            </select>
+          </label>
+          <label><input type="checkbox" checked={invert} onChange={(e) => setInvert(e.target.checked)} /> invert (dark stones)</label>
+        </div>
+      )}
 
       {status && <p style={{ color: status.startsWith("Error") || status.includes("failed") ? "crimson" : "#444" }}>{status}</p>}
 
