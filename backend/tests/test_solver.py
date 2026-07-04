@@ -31,13 +31,16 @@ def _assert_valid(walls, negs, placements):
         assert p["x_cm"] + p["w_cm"] <= maxx + 0.5
         assert p["y_cm"] >= miny - 0.5
         assert p["y_cm"] + p["h_cm"] <= maxy + 0.5
-    by_course = defaultdict(list)
-    for p in placements:
-        by_course[p["course_index"]].append((p["x_cm"], p["x_cm"] + p["w_cm"]))
-    for ranges in by_course.values():
-        ranges.sort()
-        for a, b in zip(ranges, ranges[1:]):
-            assert b[0] >= a[1] - 0.01, "stones overlap within a course"
+    # No two placed stones overlap in 2D.
+    for i in range(len(placements)):
+        a = placements[i]
+        ax0, ay0, ax1, ay1 = a["x_cm"], a["y_cm"], a["x_cm"] + a["w_cm"], a["y_cm"] + a["h_cm"]
+        for j in range(i + 1, len(placements)):
+            b = placements[j]
+            bx0, by0, bx1, by1 = b["x_cm"], b["y_cm"], b["x_cm"] + b["w_cm"], b["y_cm"] + b["h_cm"]
+            ix = min(ax1, bx1) - max(ax0, bx0)
+            iy = min(ay1, by1) - max(ay0, by0)
+            assert not (ix > 0.5 and iy > 0.5), "stones overlap"
 
 
 def test_rectangular_wall():

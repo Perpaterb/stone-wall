@@ -59,3 +59,31 @@ def region_intervals_at(
     wall_iv = union_intervals([iv for w in walls for iv in polygon_intervals_at(w, y)])
     neg_iv = union_intervals([iv for n in negs for iv in polygon_intervals_at(n, y)])
     return subtract_intervals(wall_iv, neg_iv)
+
+
+def polygon_intervals_at_x(poly: list[list[float]], x: float) -> list[tuple[float, float]]:
+    """Y-ranges where the vertical line at `x` is inside `poly`."""
+    ys: list[float] = []
+    n = len(poly)
+    for i in range(n):
+        x1, y1 = poly[i]
+        x2, y2 = poly[(i + 1) % n]
+        if (x1 <= x < x2) or (x2 <= x < x1):
+            t = (x - x1) / (x2 - x1)
+            ys.append(y1 + t * (y2 - y1))
+    ys.sort()
+    return [(ys[i], ys[i + 1]) for i in range(0, len(ys) - 1, 2)]
+
+
+def column_intervals(
+    x: float,
+    walls: list[list[list[float]]],
+    negs: list[list[list[float]]],
+    max_y: float,
+) -> list[tuple[float, float]]:
+    """Valid vertical spans at column x, as height-above-bottom (u) intervals,
+    ascending. u = max_y - y, so u grows upward from the wall bottom."""
+    wall_y = union_intervals([iv for w in walls for iv in polygon_intervals_at_x(w, x)])
+    neg_y = union_intervals([iv for n in negs for iv in polygon_intervals_at_x(n, x)])
+    y_iv = subtract_intervals(wall_y, neg_y)
+    return sorted((max_y - y1, max_y - y0) for (y0, y1) in y_iv)
