@@ -171,3 +171,110 @@ export async function deleteBuildMap(id: string): Promise<void> {
   const res = await fetch(`${BASE}/buildmaps/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Failed to delete build map (${res.status})`);
 }
+
+export interface Stone {
+  id: string;
+  code: string;
+  width_cm: number;
+  height_cm: number;
+  area_cm2: number;
+  angle_deg: number;
+  status: string;
+  polygon: number[][];
+  label: string | null;
+  notes: string;
+  storage_location: string | null;
+  crop_path: string | null;
+  source_photo_id: string | null;
+  sheet_x_cm: number | null;
+  sheet_y_cm: number | null;
+}
+
+export interface PhotoResult {
+  source_photo_id: string;
+  warped_url: string;
+  px_per_cm: number;
+  span_x_cm: number;
+  span_y_cm: number;
+  detected: number;
+  stones: Stone[];
+}
+
+export interface PhotoInfo {
+  id: string;
+  warped_url: string;
+  px_per_cm: number;
+  span_x_cm: number;
+  span_y_cm: number;
+}
+
+export function cropUrl(s: Stone): string | null {
+  return s.crop_path ? `/api/images/${s.crop_path}` : null;
+}
+
+export async function uploadPhoto(
+  projectId: string,
+  file: File,
+  spanX: number,
+  spanY: number,
+  storage: string
+): Promise<PhotoResult> {
+  const fd = new FormData();
+  fd.append("file", file);
+  fd.append("span_x_cm", String(spanX));
+  fd.append("span_y_cm", String(spanY));
+  fd.append("storage_location", storage);
+  const res = await fetch(`${BASE}/projects/${projectId}/photos`, {
+    method: "POST",
+    body: fd,
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => null);
+    throw new Error(d?.detail ?? `Upload failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function confirmStones(
+  projectId: string,
+  body: { ordered_ids: string[]; deleted_ids: string[] }
+): Promise<Stone[]> {
+  const res = await fetch(`${BASE}/projects/${projectId}/stones/confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Confirm failed (${res.status})`);
+  return res.json();
+}
+
+export async function listStones(projectId: string, status?: string): Promise<Stone[]> {
+  const q = status ? `?status=${status}` : "";
+  const res = await fetch(`${BASE}/projects/${projectId}/stones${q}`);
+  if (!res.ok) throw new Error(`Failed to load stones (${res.status})`);
+  return res.json();
+}
+
+export async function updateStone(
+  id: string,
+  patch: { status?: string; notes?: string; label?: string; storage_location?: string }
+): Promise<Stone> {
+  const res = await fetch(`${BASE}/stones/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error(`Failed to update stone (${res.status})`);
+  return res.json();
+}
+
+export async function deleteStone(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/stones/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to delete stone (${res.status})`);
+}
+
+export async function getPhoto(id: string): Promise<PhotoInfo> {
+  const res = await fetch(`${BASE}/photos/${id}`);
+  if (!res.ok) throw new Error(`Failed to load photo (${res.status})`);
+  return res.json();
+}

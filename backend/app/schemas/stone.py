@@ -18,6 +18,11 @@ class StoneUpdate(BaseModel):
     storage_location: str | None = None
 
 
+class ConfirmStonesIn(BaseModel):
+    ordered_ids: list[uuid.UUID]  # kept stones, in reading order
+    deleted_ids: list[uuid.UUID] = []  # false positives to drop
+
+
 class StoneRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,8 +31,13 @@ class StoneRead(BaseModel):
     width_cm: float
     height_cm: float
     area_cm2: float
+    angle_deg: float
     status: str
     polygon: list[list[float]]
     label: str | None
     notes: str
     storage_location: str | None
+    crop_path: str | None
+    source_photo_id: uuid.UUID | None
+    sheet_x_cm: float | None
+    sheet_y_cm: float | None

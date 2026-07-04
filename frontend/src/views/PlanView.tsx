@@ -280,6 +280,8 @@ export default function PlanView() {
       <div style={{ display: "flex", gap: 8, alignItems: "center", padding: 8, borderBottom: "1px solid #ddd", flexWrap: "wrap" }}>
         <Link to="/">&larr; Projects</Link>
         <strong>{project?.name ?? "..."}</strong>
+        {projectId && <Link to={`/projects/${projectId}/stones`}>Catalogue</Link>}
+        {projectId && <Link to={`/projects/${projectId}/add-stones`}>Add stones</Link>}
         <span style={{ width: 8 }} />
         {(["pan", "wall", "negative", "edit"] as Tool[]).map((t) => (
           <button

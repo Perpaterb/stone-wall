@@ -74,11 +74,16 @@ export default function ProjectsView() {
       ) : (
         <ul style={{ lineHeight: 1.8 }}>
           {projects.map((p) => (
-            <li key={p.id}>
-              <Link to={`/projects/${p.id}/plan`}>
-                <strong>{p.name}</strong>
-              </Link>{" "}
-              ({p.kind}) grout {p.grout_min_cm}-{p.grout_max_cm} cm
+            <li key={p.id} style={{ marginBottom: 6 }}>
+              <strong>{p.name}</strong> ({p.kind}) grout {p.grout_min_cm}-{p.grout_max_cm} cm
+              <br />
+              <span style={{ fontSize: 13 }}>
+                <Link to={`/projects/${p.id}/plan`}>Plan</Link>
+                {" · "}
+                <Link to={`/projects/${p.id}/stones`}>Catalogue</Link>
+                {" · "}
+                <Link to={`/projects/${p.id}/add-stones`}>Add stones</Link>
+              </span>
             </li>
           ))}
         </ul>

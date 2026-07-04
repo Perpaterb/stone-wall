@@ -42,6 +42,28 @@ class PlanShape(Base):
     z_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
+class SourcePhoto(Base):
+    __tablename__ = "source_photos"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    image_path: Mapped[str] = mapped_column(String, nullable=False)  # warped, rel to IMAGE_DIR
+    px_per_cm: Mapped[float] = mapped_column(Float, nullable=False)
+    span_x_cm: Mapped[float] = mapped_column(Float, nullable=False)
+    span_y_cm: Mapped[float] = mapped_column(Float, nullable=False)
+    storage_location: Mapped[str | None] = mapped_column(String, nullable=True)
+    captured_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class Stone(Base):
     __tablename__ = "stones"
 
