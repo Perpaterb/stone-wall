@@ -1,9 +1,23 @@
 import Konva from "konva";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Circle, Layer, Line, Stage } from "react-konva";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { getPlan, getProject, putPlan, updateProject, type Project } from "../api/client";
+import {
+  clearStones,
+  createBuildMap,
+  deleteBuildMap,
+  generateDummyStones,
+  getCoverage,
+  getPlan,
+  getProject,
+  listBuildMaps,
+  putPlan,
+  updateProject,
+  type BuildMapSummary,
+  type Coverage,
+  type Project,
+} from "../api/client";
 import { orthoSnap, polygonAreaCm2 } from "../geometry";
 
 type Tool = "pan" | "wall" | "negative" | "edit";
@@ -19,6 +33,7 @@ const newId = () => `tmp-${tmpCounter++}`;
 
 export default function PlanView() {
   const { projectId } = useParams();
+  const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const fittedRef = useRef(false);
@@ -33,6 +48,18 @@ export default function PlanView() {
   const [scale, setScale] = useState(0.5);
   const [pos, setPos] = useState({ x: 40, y: 40 });
   const [status, setStatus] = useState<string | null>(null);
+  const [serverCoverage, setServerCoverage] = useState<Coverage | null>(null);
+  const [buildMaps, setBuildMaps] = useState<BuildMapSummary[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  function refreshCoverage() {
+    if (!projectId) return;
+    getCoverage(projectId).then(setServerCoverage).catch(() => {});
+  }
+  function refreshBuildMaps() {
+    if (!projectId) return;
+    listBuildMaps(projectId).then(setBuildMaps).catch(() => {});
+  }
 
   useEffect(() => {
     if (!projectId) return;
@@ -44,7 +71,70 @@ export default function PlanView() {
         )
       )
       .catch((e) => setStatus(String(e)));
+    refreshCoverage();
+    refreshBuildMaps();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
+
+  async function genStones() {
+    if (!projectId) return;
+    setBusy(true);
+    setStatus("Generating stones...");
+    try {
+      const r = await generateDummyStones(projectId, { count: 300, seed: 1 });
+      setStatus(`${r.total} stones in catalogue`);
+      refreshCoverage();
+    } catch (e) {
+      setStatus(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearStonesFn() {
+    if (!projectId) return;
+    setBusy(true);
+    try {
+      await clearStones(projectId);
+      setStatus("Stones cleared");
+      refreshCoverage();
+    } catch (e) {
+      setStatus(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function genBuildMap() {
+    if (!projectId) return;
+    setBusy(true);
+    setStatus("Solving layout...");
+    try {
+      // Save the current plan first so the solver sees the latest walls.
+      await putPlan(
+        projectId,
+        shapes.map((s, i) => ({ kind: s.kind, polygon: s.polygon, z_order: i }))
+      );
+      const seed = Math.floor(1 + Math.random() * 100000);
+      const bm = await createBuildMap(projectId, { seed });
+      navigate(`/build/${bm.id}`);
+    } catch (e) {
+      setStatus(String(e));
+      setBusy(false);
+    }
+  }
+
+  async function delBuildMap(id: string) {
+    setBusy(true);
+    try {
+      await deleteBuildMap(id);
+      refreshBuildMaps();
+    } catch (e) {
+      setStatus(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
 
   useEffect(() => {
     function measure() {
@@ -322,7 +412,49 @@ export default function PlanView() {
           <div>Wall area: {(coverage.wall / 10000).toFixed(2)} m&sup2;</div>
           <div>Negative: {(coverage.neg / 10000).toFixed(2)} m&sup2;</div>
           <div>Net wall: <strong>{(coverage.net / 10000).toFixed(2)} m&sup2;</strong></div>
-          <div style={{ color: "#888", marginTop: 4 }}>Stones: added in M2 / M3</div>
+          {serverCoverage && (
+            <div style={{ marginTop: 4, borderTop: "1px solid #eee", paddingTop: 4 }}>
+              <div>
+                Stones: {serverCoverage.stone_count} avail,{" "}
+                {(serverCoverage.stone_area_cm2 / 10000).toFixed(2)} m&sup2;
+              </div>
+              <div>
+                Can cover:{" "}
+                <strong>
+                  {coverage.net > 0
+                    ? Math.min(999, (serverCoverage.stone_area_cm2 / coverage.net) * 100).toFixed(0)
+                    : 0}
+                  %
+                </strong>{" "}
+                of wall
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div style={{ position: "absolute", right: 12, top: 12, background: "rgba(255,255,255,0.96)", border: "1px solid #ddd", borderRadius: 8, padding: "10px 12px", fontSize: 13, width: 210 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Stones</div>
+          <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+            <button style={btn(false)} onClick={genStones} disabled={busy}>+300 dummy</button>
+            <button style={btn(false)} onClick={clearStonesFn} disabled={busy}>Clear</button>
+          </div>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>Build maps</div>
+          <button style={{ ...btn(false), width: "100%", marginBottom: 8 }} onClick={genBuildMap} disabled={busy}>
+            Generate build map
+          </button>
+          <div style={{ maxHeight: 200, overflowY: "auto" }}>
+            {buildMaps.length === 0 && <div style={{ color: "#999" }}>none yet</div>}
+            {buildMaps.map((b) => (
+              <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <Link to={`/build/${b.id}`} style={{ flex: 1 }}>
+                  {b.report?.coverage_pct ?? "?"}% ({b.report?.stones_used ?? "?"})
+                </Link>
+                <button style={{ ...btn(false), padding: "2px 6px" }} onClick={() => delBuildMap(b.id)} disabled={busy}>
+                  x
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </div>

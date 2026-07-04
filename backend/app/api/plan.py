@@ -4,7 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.db.models import PlanShape, Project
+from sqlalchemy import func
+
+from app.db.models import PlanShape, Project, Stone
 from app.db.session import get_db
 from app.geometry import polygon_area_cm2
 from app.schemas.coverage import Coverage
@@ -61,9 +63,23 @@ def get_coverage(project_id: uuid.UUID, db: Session = Depends(get_db)):
     wall = sum(polygon_area_cm2(s.polygon) for s in shapes if s.kind == "wall")
     neg = sum(polygon_area_cm2(s.polygon) for s in shapes if s.kind == "negative")
     net = max(0.0, wall - neg)
-    # Stones arrive with the dummy generator (M2) and the cataloguer (M3).
-    stone_area = 0.0
-    stone_count = 0
+    # Available stones (dummy from M2, real from M3). Used/held stones excluded.
+    stone_area = (
+        db.scalar(
+            select(func.coalesce(func.sum(Stone.area_cm2), 0.0)).where(
+                Stone.project_id == project_id, Stone.status == "available"
+            )
+        )
+        or 0.0
+    )
+    stone_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(Stone)
+            .where(Stone.project_id == project_id, Stone.status == "available")
+        )
+        or 0
+    )
     ratio = stone_area / net if net > 0 else 0.0
     return Coverage(
         wall_area_cm2=wall,
