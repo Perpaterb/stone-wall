@@ -33,7 +33,7 @@ services:
       BASIC_AUTH_USER: ${BASIC_AUTH_USER}
       BASIC_AUTH_PASS: ${BASIC_AUTH_PASS}
     ports:
-      - "8080:80"
+      - "8090:80"
     depends_on:
       - backend
 
