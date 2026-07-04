@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Project outputs / generated data
+catalogue.db
+crops/
+debug/
+output/
+out/
+releases/
+
+# Tooling
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
