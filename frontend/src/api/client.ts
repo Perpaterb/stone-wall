@@ -120,7 +120,7 @@ export interface Placement {
 
 export interface BuildMapDetail extends BuildMapSummary {
   project_id: string;
-  params: Record<string, number>;
+  params: Record<string, unknown>;
   placements: Placement[];
 }
 

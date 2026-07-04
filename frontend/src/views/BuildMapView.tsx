@@ -39,6 +39,7 @@ export default function BuildMapView() {
   const [pos, setPos] = useState({ x: 40, y: 40 });
   const [copied, setCopied] = useState(false);
   const [selectedStone, setSelectedStone] = useState<string | null>(null);
+  const [markMode, setMarkMode] = useState(false);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -66,15 +67,24 @@ export default function BuildMapView() {
     return () => window.removeEventListener("resize", measure);
   }, []);
 
+  const walls = (bm?.params?.walls as number[][][]) ?? [];
+  const negs = (bm?.params?.negatives as number[][][]) ?? [];
+
   const bounds = useMemo(() => {
-    if (!bm || bm.placements.length === 0) return null;
+    if (!bm) return null;
+    const wpolys = (bm.params?.walls as number[][][]) ?? [];
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const p of bm.placements) {
-      minX = Math.min(minX, p.x_cm);
-      minY = Math.min(minY, p.y_cm);
-      maxX = Math.max(maxX, p.x_cm + p.w_cm);
-      maxY = Math.max(maxY, p.y_cm + p.h_cm);
+    for (const poly of wpolys) {
+      for (const [x, y] of poly) {
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
     }
+    for (const p of bm.placements) {
+      minX = Math.min(minX, p.x_cm); minY = Math.min(minY, p.y_cm);
+      maxX = Math.max(maxX, p.x_cm + p.w_cm); maxY = Math.max(maxY, p.y_cm + p.h_cm);
+    }
+    if (minX === Infinity) return null;
     return { minX, minY, maxX, maxY };
   }, [bm]);
 
@@ -165,8 +175,8 @@ export default function BuildMapView() {
   const showLabels = scale > 0.35;
   const r = bm?.report ?? null;
   const selected = bm?.placements.find((p) => p.stone_id === selectedStone) ?? null;
-  const groutMin = bm?.params?.grout_min_cm;
-  const groutMax = bm?.params?.grout_max_cm;
+  const groutMin = bm?.params?.grout_min_cm as number | undefined;
+  const groutMax = bm?.params?.grout_max_cm as number | undefined;
 
   function fillFor(p: Placement): string {
     if (p.status === "used") return "#c8c8c8";
@@ -182,6 +192,12 @@ export default function BuildMapView() {
         <strong>{bm?.name ?? "Build map"}</strong>
         {bm && <span style={{ color: "#888" }}>seed {bm.seed}</span>}
         <span style={{ flex: 1 }} />
+        <button
+          onClick={() => setMarkMode((m) => !m)}
+          style={{ fontWeight: markMode ? 700 : 400, background: markMode ? "#d9f2d9" : "#fff" }}
+        >
+          {markMode ? "Mark mode: ON (tap to mark used)" : "Mark mode: off"}
+        </button>
         <button onClick={regenerate} disabled={busy || !bm}>Regenerate</button>
         <button onClick={() => zoomBy(1.2)}>+</button>
         <button onClick={() => zoomBy(1 / 1.2)}>&minus;</button>
@@ -204,6 +220,14 @@ export default function BuildMapView() {
             if (e.target === e.target.getStage()) setPos({ x: e.target.x(), y: e.target.y() });
           }}
         >
+          <Layer listening={false}>
+            {walls.map((poly, i) => (
+              <Line key={`w${i}`} points={poly.flat()} closed fill="#d9d5cc" stroke="#6b6252" strokeWidth={2 / scale} />
+            ))}
+            {negs.map((poly, i) => (
+              <Line key={`n${i}`} points={poly.flat()} closed fill="#f4f4f2" stroke="#999" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} />
+            ))}
+          </Layer>
           <Layer>
             {bm?.placements.map((p) => (
               <Line
@@ -214,8 +238,8 @@ export default function BuildMapView() {
                 opacity={p.status === "used" ? 0.55 : 1}
                 stroke={p.stone_id === selectedStone ? "#2b6cb0" : p.cut ? "#c0392b" : "#8a7a52"}
                 strokeWidth={(p.stone_id === selectedStone ? 2.4 : p.cut ? 1.6 : 0.8) / scale}
-                onClick={() => setSelectedStone(p.stone_id)}
-                onTap={() => setSelectedStone(p.stone_id)}
+                onClick={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
+                onTap={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
               />
             ))}
             {showLabels &&

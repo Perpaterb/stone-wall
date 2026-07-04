@@ -63,6 +63,10 @@ def create_buildmap(
         "through_stone_prob": payload.through_stone_prob,
     }
     placements, report = solve(walls, negs, stones, params)
+    # Snapshot the wall shapes into the build map so its view can draw the wall
+    # even if the plan changes later.
+    params["walls"] = walls
+    params["negatives"] = negs
 
     bm = BuildMap(
         project_id=project_id,
