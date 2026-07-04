@@ -32,6 +32,9 @@ class PlacementOut(BaseModel):
     rotation_deg: float
     course_index: int
     cut: dict | None
+    status: str
+    crop_path: str | None
+    polygon: list[list[float]]
 
 
 class BuildMapDetail(BaseModel):
@@ -39,7 +42,13 @@ class BuildMapDetail(BaseModel):
     project_id: uuid.UUID
     name: str
     seed: int
+    params: dict
     report: dict | None
     share_key: str
     created_at: datetime
     placements: list[PlacementOut]
+
+
+class MarkUsedIn(BaseModel):
+    used: bool
+    marked_by: str | None = None

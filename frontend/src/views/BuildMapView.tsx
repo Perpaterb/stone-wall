@@ -1,12 +1,33 @@
 import Konva from "konva";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Layer, Rect, Stage, Text } from "react-konva";
-import { Link, useParams } from "react-router-dom";
+import { Layer, Line, Stage, Text } from "react-konva";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
-import { getBuildMap, type BuildMapDetail } from "../api/client";
+import {
+  createBuildMap,
+  cropUrl,
+  getBuildMap,
+  markUsed,
+  type BuildMapDetail,
+  type Placement,
+} from "../api/client";
+
+function placedPoly(p: Placement): number[] {
+  const src =
+    p.polygon && p.polygon.length >= 3
+      ? p.polygon
+      : [[0, 0], [p.w_cm, 0], [p.w_cm, p.h_cm], [0, p.h_cm]];
+  const pts: number[] = [];
+  for (const [px, py] of src) {
+    if (p.rotation_deg === 90) pts.push(p.x_cm + py, p.y_cm + p.h_cm - px);
+    else pts.push(p.x_cm + px, p.y_cm + py);
+  }
+  return pts;
+}
 
 export default function BuildMapView() {
   const { buildMapId } = useParams();
+  const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const fittedRef = useRef(false);
@@ -17,10 +38,21 @@ export default function BuildMapView() {
   const [scale, setScale] = useState(0.5);
   const [pos, setPos] = useState({ x: 40, y: 40 });
   const [copied, setCopied] = useState(false);
+  const [selectedStone, setSelectedStone] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!buildMapId) return;
     getBuildMap(buildMapId).then(setBm).catch((e) => setError(String(e)));
+  }, [buildMapId]);
+
+  // Gentle poll so a crew sees each other's "used" marks.
+  useEffect(() => {
+    if (!buildMapId) return;
+    const t = setInterval(() => {
+      getBuildMap(buildMapId).then(setBm).catch(() => {});
+    }, 10000);
+    return () => clearInterval(t);
   }, [buildMapId]);
 
   useEffect(() => {
@@ -46,7 +78,6 @@ export default function BuildMapView() {
     return { minX, minY, maxX, maxY };
   }, [bm]);
 
-  // Fit the wall into the viewport once placements + size are known.
   useEffect(() => {
     if (fittedRef.current || !bounds || size.width < 50) return;
     const w = bounds.maxX - bounds.minX || 1;
@@ -94,16 +125,64 @@ export default function BuildMapView() {
     }
   }
 
+  async function toggleUsed(p: Placement) {
+    if (!bm) return;
+    setBusy(true);
+    try {
+      const used = p.status !== "used";
+      const r = await markUsed(bm.id, p.stone_id, used);
+      setBm((cur) =>
+        cur
+          ? {
+              ...cur,
+              placements: cur.placements.map((x) =>
+                x.stone_id === p.stone_id ? { ...x, status: r.status } : x
+              ),
+            }
+          : cur
+      );
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function regenerate() {
+    if (!bm) return;
+    setBusy(true);
+    try {
+      const seed = Math.floor(1 + Math.random() * 100000);
+      const next = await createBuildMap(bm.project_id, { seed });
+      fittedRef.current = false;
+      navigate(`/build/${next.id}`);
+    } catch (e) {
+      setError(String(e));
+      setBusy(false);
+    }
+  }
+
   const showLabels = scale > 0.35;
   const r = bm?.report ?? null;
+  const selected = bm?.placements.find((p) => p.stone_id === selectedStone) ?? null;
+  const groutMin = bm?.params?.grout_min_cm;
+  const groutMax = bm?.params?.grout_max_cm;
+
+  function fillFor(p: Placement): string {
+    if (p.status === "used") return "#c8c8c8";
+    if (p.cut) return "#f0c9b0";
+    return p.course_index % 2 === 0 ? "#e8d9b8" : "#e0cfa8";
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
       <div style={{ display: "flex", gap: 10, alignItems: "center", padding: 8, borderBottom: "1px solid #ddd", flexWrap: "wrap" }}>
         <Link to="/">&larr; Projects</Link>
+        {bm && <Link to={`/projects/${bm.project_id}/plan`}>Plan</Link>}
         <strong>{bm?.name ?? "Build map"}</strong>
         {bm && <span style={{ color: "#888" }}>seed {bm.seed}</span>}
         <span style={{ flex: 1 }} />
+        <button onClick={regenerate} disabled={busy || !bm}>Regenerate</button>
         <button onClick={() => zoomBy(1.2)}>+</button>
         <button onClick={() => zoomBy(1 / 1.2)}>&minus;</button>
       </div>
@@ -126,26 +205,23 @@ export default function BuildMapView() {
           }}
         >
           <Layer>
-            {bm?.placements.map((p, i) => {
-              const isCut = !!p.cut;
-              const band = p.course_index % 2 === 0 ? "#e8d9b8" : "#e0cfa8";
-              return (
-                <Rect
-                  key={i}
-                  x={p.x_cm}
-                  y={p.y_cm}
-                  width={p.w_cm}
-                  height={p.h_cm}
-                  fill={isCut ? "#f0c9b0" : band}
-                  stroke={isCut ? "#c0392b" : "#8a7a52"}
-                  strokeWidth={(isCut ? 1.6 : 0.8) / scale}
-                />
-              );
-            })}
+            {bm?.placements.map((p) => (
+              <Line
+                key={p.stone_id}
+                points={placedPoly(p)}
+                closed
+                fill={fillFor(p)}
+                opacity={p.status === "used" ? 0.55 : 1}
+                stroke={p.stone_id === selectedStone ? "#2b6cb0" : p.cut ? "#c0392b" : "#8a7a52"}
+                strokeWidth={(p.stone_id === selectedStone ? 2.4 : p.cut ? 1.6 : 0.8) / scale}
+                onClick={() => setSelectedStone(p.stone_id)}
+                onTap={() => setSelectedStone(p.stone_id)}
+              />
+            ))}
             {showLabels &&
-              bm?.placements.map((p, i) => (
+              bm?.placements.map((p) => (
                 <Text
-                  key={`t${i}`}
+                  key={`t${p.stone_id}`}
                   x={p.x_cm}
                   y={p.y_cm + p.h_cm / 2 - Math.min(p.w_cm, p.h_cm) * 0.18}
                   width={p.w_cm}
@@ -167,18 +243,46 @@ export default function BuildMapView() {
             <div>Courses: {r.courses}</div>
             <div>Cuts: {r.cut_count} ({r.cut_total_cm} cm)</div>
             <div>Gaps: {r.gap_count} ({r.gap_total_cm} cm)</div>
-            <div style={{ marginTop: 6, display: "flex", gap: 6, alignItems: "center" }}>
-              <span style={{ width: 12, height: 12, background: "#f0c9b0", border: "1.5px solid #c0392b", display: "inline-block" }} />
-              <span style={{ color: "#666" }}>needs a cut</span>
-            </div>
           </div>
         )}
 
         {bm && (
-          <div style={{ position: "absolute", right: 12, top: 12, background: "rgba(255,255,255,0.96)", border: "1px solid #ddd", borderRadius: 8, padding: "8px 10px", fontSize: 12, maxWidth: 320 }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>Share link</div>
-            <input readOnly value={shareUrl} style={{ width: "100%", fontSize: 11 }} onFocus={(e) => e.target.select()} />
-            <button style={{ marginTop: 6 }} onClick={copyShare}>{copied ? "Copied" : "Copy link"}</button>
+          <div style={{ position: "absolute", right: 12, top: 12, background: "rgba(255,255,255,0.96)", border: "1px solid #ddd", borderRadius: 8, padding: "10px 12px", fontSize: 12, width: 260 }}>
+            {selected ? (
+              <>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>{selected.code}</div>
+                {cropUrl(selected) && (
+                  <img src={cropUrl(selected)!} alt="" style={{ width: "100%", maxHeight: 130, objectFit: "contain", background: "#faf8f2" }} />
+                )}
+                <div style={{ marginTop: 6 }}>
+                  {selected.w_cm} x {selected.h_cm} cm
+                  {selected.rotation_deg === 90 ? " (on end)" : ""}
+                </div>
+                {groutMin != null && groutMax != null && (
+                  <div style={{ color: "#666" }}>grout each edge: {groutMin}-{groutMax} cm</div>
+                )}
+                {selected.cut ? (
+                  <div style={{ color: "#c0392b" }}>
+                    cut off {(selected.cut.removed_cm as number) ?? "?"} cm from the {(selected.cut.from as string) ?? "edge"}
+                  </div>
+                ) : (
+                  <div style={{ color: "#2f855a" }}>no cut needed</div>
+                )}
+                <div style={{ marginTop: 6 }}>
+                  status: <strong>{selected.status}</strong>
+                </div>
+                <button style={{ marginTop: 6, width: "100%", fontWeight: 700 }} disabled={busy} onClick={() => toggleUsed(selected)}>
+                  {selected.status === "used" ? "Unmark used" : "Mark used"}
+                </button>
+              </>
+            ) : (
+              <div style={{ color: "#888" }}>Tap a stone to see details and mark it used.</div>
+            )}
+            <div style={{ marginTop: 10, borderTop: "1px solid #eee", paddingTop: 8 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Share link</div>
+              <input readOnly value={shareUrl} style={{ width: "100%", fontSize: 11 }} onFocus={(e) => e.target.select()} />
+              <button style={{ marginTop: 6 }} onClick={copyShare}>{copied ? "Copied" : "Copy link"}</button>
+            </div>
           </div>
         )}
       </div>

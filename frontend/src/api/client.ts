@@ -113,10 +113,14 @@ export interface Placement {
   rotation_deg: number;
   course_index: number;
   cut: Record<string, unknown> | null;
+  status: string;
+  crop_path: string | null;
+  polygon: number[][];
 }
 
 export interface BuildMapDetail extends BuildMapSummary {
   project_id: string;
+  params: Record<string, number>;
   placements: Placement[];
 }
 
@@ -164,6 +168,21 @@ export async function listBuildMaps(projectId: string): Promise<BuildMapSummary[
 export async function getBuildMap(id: string): Promise<BuildMapDetail> {
   const res = await fetch(`${BASE}/buildmaps/${id}`);
   if (!res.ok) throw new Error(`Failed to load build map (${res.status})`);
+  return res.json();
+}
+
+export async function markUsed(
+  buildMapId: string,
+  stoneId: string,
+  used: boolean,
+  markedBy?: string
+): Promise<{ stone_id: string; status: string }> {
+  const res = await fetch(`${BASE}/buildmaps/${buildMapId}/placements/${stoneId}/used`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ used, marked_by: markedBy ?? null }),
+  });
+  if (!res.ok) throw new Error(`Mark failed (${res.status})`);
   return res.json();
 }
 

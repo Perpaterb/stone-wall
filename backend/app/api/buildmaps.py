@@ -5,12 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import BuildMap, PlanShape, Placement, Project, Stone
+from app.db.models import BuildMap, PlanShape, Placement, Project, Stone, UsageEvent
 from app.db.session import get_db
 from app.schemas.buildmap import (
     BuildMapCreate,
     BuildMapDetail,
     BuildMapSummary,
+    MarkUsedIn,
     PlacementOut,
 )
 from app.solver.packer import solve
@@ -107,7 +108,9 @@ def get_buildmap(build_map_id: uuid.UUID, db: Session = Depends(get_db)):
     if bm is None:
         raise HTTPException(status_code=404, detail="Build map not found")
     rows = db.execute(
-        select(Placement, Stone.code)
+        select(
+            Placement, Stone.code, Stone.status, Stone.crop_path, Stone.polygon
+        )
         .join(Stone, Stone.id == Placement.stone_id)
         .where(Placement.build_map_id == build_map_id)
         .order_by(Placement.course_index)
@@ -123,19 +126,51 @@ def get_buildmap(build_map_id: uuid.UUID, db: Session = Depends(get_db)):
             rotation_deg=pl.rotation_deg,
             course_index=pl.course_index,
             cut=pl.cut,
+            status=status,
+            crop_path=crop_path,
+            polygon=polygon,
         )
-        for pl, code in rows
+        for pl, code, status, crop_path, polygon in rows
     ]
     return BuildMapDetail(
         id=bm.id,
         project_id=bm.project_id,
         name=bm.name,
         seed=bm.seed,
+        params=bm.params or {},
         report=bm.report,
         share_key=bm.share_key,
         created_at=bm.created_at,
         placements=placements,
     )
+
+
+@router.post("/buildmaps/{build_map_id}/placements/{stone_id}/used")
+def mark_used(
+    build_map_id: uuid.UUID,
+    stone_id: uuid.UUID,
+    payload: MarkUsedIn,
+    db: Session = Depends(get_db),
+):
+    bm = db.get(BuildMap, build_map_id)
+    if bm is None:
+        raise HTTPException(status_code=404, detail="Build map not found")
+    stone = db.get(Stone, stone_id)
+    if stone is None:
+        raise HTTPException(status_code=404, detail="Stone not found")
+    # Used state is authoritative on the stone (a physically used stone is gone
+    # from every future solve). The event log records who/when.
+    stone.status = "used" if payload.used else "available"
+    db.add(
+        UsageEvent(
+            build_map_id=build_map_id,
+            stone_id=stone_id,
+            used=payload.used,
+            marked_by=payload.marked_by,
+        )
+    )
+    db.commit()
+    return {"stone_id": str(stone_id), "status": stone.status}
 
 
 @router.delete("/buildmaps/{build_map_id}")

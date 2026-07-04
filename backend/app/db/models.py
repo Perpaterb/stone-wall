@@ -144,3 +144,25 @@ class Placement(Base):
     course_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cut: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     grout_edges: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class UsageEvent(Base):
+    __tablename__ = "usage_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    build_map_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("build_maps.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    stone_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("stones.id", ondelete="CASCADE"), nullable=False
+    )
+    used: Mapped[bool] = mapped_column(nullable=False, default=True)
+    marked_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    marked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
