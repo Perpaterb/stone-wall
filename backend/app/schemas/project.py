@@ -12,6 +12,12 @@ class ProjectCreate(BaseModel):
     dummy_params: dict | None = None
 
 
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    grout_min_cm: float | None = None
+    grout_max_cm: float | None = None
+
+
 class ProjectRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

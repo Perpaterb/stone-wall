@@ -20,6 +20,9 @@ services:
       IMAGE_DIR: ${IMAGE_DIR}
     volumes:
       - images:/data/images
+      # Dev: mount source + hot reload so backend changes apply without rebuild.
+      - ./backend/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       # Exposed for host dev mode (Vite proxy). Only reachable on localhost.
       - "8000:8000"

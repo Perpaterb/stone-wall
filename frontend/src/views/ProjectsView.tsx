@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { createProject, listProjects, type Project } from "../api/client";
 
@@ -74,7 +75,10 @@ export default function ProjectsView() {
         <ul style={{ lineHeight: 1.8 }}>
           {projects.map((p) => (
             <li key={p.id}>
-              <strong>{p.name}</strong> ({p.kind}) grout {p.grout_min_cm}-{p.grout_max_cm} cm
+              <Link to={`/projects/${p.id}/plan`}>
+                <strong>{p.name}</strong>
+              </Link>{" "}
+              ({p.kind}) grout {p.grout_min_cm}-{p.grout_max_cm} cm
             </li>
           ))}
         </ul>
