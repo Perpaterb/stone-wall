@@ -7,6 +7,7 @@ import {
   createBuildMap,
   cropUrl,
   getBuildMap,
+  getPlan,
   markUsed,
   type BuildMapDetail,
   type Placement,
@@ -41,6 +42,7 @@ export default function BuildMapView() {
   const [selectedStone, setSelectedStone] = useState<string | null>(null);
   const [markMode, setMarkMode] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [planFallback, setPlanFallback] = useState<{ walls: number[][][]; negs: number[][][] }>({ walls: [], negs: [] });
 
   useEffect(() => {
     if (!buildMapId) return;
@@ -67,12 +69,30 @@ export default function BuildMapView() {
     return () => window.removeEventListener("resize", measure);
   }, []);
 
-  const walls = (bm?.params?.walls as number[][][]) ?? [];
-  const negs = (bm?.params?.negatives as number[][][]) ?? [];
+  // Prefer the wall snapshot stored on the build map; fall back to the current
+  // plan for older maps that predate the snapshot.
+  useEffect(() => {
+    if (!bm) return;
+    const snap = (bm.params?.walls as number[][][]) ?? [];
+    if (snap.length) return;
+    getPlan(bm.project_id)
+      .then((p) =>
+        setPlanFallback({
+          walls: p.shapes.filter((s) => s.kind === "wall").map((s) => s.polygon),
+          negs: p.shapes.filter((s) => s.kind === "negative").map((s) => s.polygon),
+        })
+      )
+      .catch(() => {});
+  }, [bm]);
+
+  const snapWalls = (bm?.params?.walls as number[][][]) ?? [];
+  const snapNegs = (bm?.params?.negatives as number[][][]) ?? [];
+  const walls = snapWalls.length ? snapWalls : planFallback.walls;
+  const negs = snapNegs.length ? snapNegs : planFallback.negs;
 
   const bounds = useMemo(() => {
     if (!bm) return null;
-    const wpolys = (bm.params?.walls as number[][][]) ?? [];
+    const wpolys = walls;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const poly of wpolys) {
       for (const [x, y] of poly) {
@@ -86,7 +106,8 @@ export default function BuildMapView() {
     }
     if (minX === Infinity) return null;
     return { minX, minY, maxX, maxY };
-  }, [bm]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bm, planFallback]);
 
   useEffect(() => {
     if (fittedRef.current || !bounds || size.width < 50) return;
@@ -238,6 +259,7 @@ export default function BuildMapView() {
                 opacity={p.status === "used" ? 0.55 : 1}
                 stroke={p.stone_id === selectedStone ? "#2b6cb0" : p.cut ? "#c0392b" : "#8a7a52"}
                 strokeWidth={(p.stone_id === selectedStone ? 2.4 : p.cut ? 1.6 : 0.8) / scale}
+                hitStrokeWidth={6 / scale}
                 onClick={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
                 onTap={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
               />

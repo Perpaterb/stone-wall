@@ -1,6 +1,6 @@
 import Konva from "konva";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Layer, Line, Stage } from "react-konva";
+import { Circle, Layer, Line, Stage, Text } from "react-konva";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -216,6 +216,77 @@ export default function PlanView() {
     setSelectedId(null);
   }
 
+  function deleteShapeById(id: string) {
+    setShapes((s) => s.filter((sh) => sh.id !== id));
+    setSelectedId((cur) => (cur === id ? null : cur));
+  }
+
+  function setVertexXY(id: string, i: number, x: number, y: number) {
+    if (Number.isNaN(x) || Number.isNaN(y)) return;
+    setShapes((s) =>
+      s.map((sh) =>
+        sh.id === id ? { ...sh, polygon: sh.polygon.map((p, k) => (k === i ? [x, y] : p)) } : sh
+      )
+    );
+  }
+
+  // Set an edge's length by moving its end vertex along the edge direction.
+  function setEdgeLength(id: string, i: number, newLen: number) {
+    if (Number.isNaN(newLen) || newLen <= 0) return;
+    setShapes((s) =>
+      s.map((sh) => {
+        if (sh.id !== id) return sh;
+        const n = sh.polygon.length;
+        const a = sh.polygon[i];
+        const b = sh.polygon[(i + 1) % n];
+        const dx = b[0] - a[0];
+        const dy = b[1] - a[1];
+        const cur = Math.hypot(dx, dy) || 1;
+        const nb = [a[0] + (dx / cur) * newLen, a[1] + (dy / cur) * newLen];
+        return { ...sh, polygon: sh.polygon.map((p, k) => (k === (i + 1) % n ? nb : p)) };
+      })
+    );
+  }
+
+  // Set the interior angle at a vertex by rotating its outgoing edge.
+  function setVertexAngleDeg(id: string, i: number, deg: number) {
+    if (Number.isNaN(deg)) return;
+    setShapes((s) =>
+      s.map((sh) => {
+        if (sh.id !== id) return sh;
+        const n = sh.polygon.length;
+        const prev = sh.polygon[(i - 1 + n) % n];
+        const v = sh.polygon[i];
+        const next = sh.polygon[(i + 1) % n];
+        const inAng = Math.atan2(prev[1] - v[1], prev[0] - v[0]);
+        const curOut = Math.atan2(next[1] - v[1], next[0] - v[0]);
+        const outLen = Math.hypot(next[0] - v[0], next[1] - v[1]);
+        const sign = Math.sin(curOut - inAng) >= 0 ? 1 : -1;
+        const newOut = inAng + sign * (deg * Math.PI) / 180;
+        const nn = [v[0] + Math.cos(newOut) * outLen, v[1] + Math.sin(newOut) * outLen];
+        return { ...sh, polygon: sh.polygon.map((p, k) => (k === (i + 1) % n ? nn : p)) };
+      })
+    );
+  }
+
+  function edgeLen(poly: number[][], i: number) {
+    const a = poly[i];
+    const b = poly[(i + 1) % poly.length];
+    return Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+
+  function vertexAngleDeg(poly: number[][], i: number) {
+    const n = poly.length;
+    const prev = poly[(i - 1 + n) % n];
+    const v = poly[i];
+    const next = poly[(i + 1) % n];
+    const a1 = Math.atan2(prev[1] - v[1], prev[0] - v[0]);
+    const a2 = Math.atan2(next[1] - v[1], next[0] - v[0]);
+    let d = (Math.abs(a1 - a2) * 180) / Math.PI;
+    if (d > 180) d = 360 - d;
+    return d;
+  }
+
   async function save() {
     if (!projectId) return;
     setStatus("Saving...");
@@ -274,6 +345,8 @@ export default function PlanView() {
     borderRadius: 4,
     cursor: "pointer",
   });
+
+  const selShape = shapes.find((s) => s.id === selectedId) ?? null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", fontFamily: "system-ui, sans-serif" }}>
@@ -388,26 +461,90 @@ export default function PlanView() {
             {draft.map((p, i) => (
               <Circle key={`d${i}`} x={p[0]} y={p[1]} radius={5 / scale} fill="#555" />
             ))}
+            {/* Edit mode: every corner of every shape is a big draggable handle. */}
             {tool === "edit" &&
-              shapes
-                .filter((s) => s.id === selectedId)
-                .map((s) =>
-                  s.polygon.map((p, i) => (
-                    <Circle
-                      key={`${s.id}-${i}`}
-                      x={p[0]}
-                      y={p[1]}
-                      radius={7 / scale}
-                      fill="#fff"
-                      stroke="#2b6cb0"
-                      strokeWidth={2 / scale}
-                      draggable
-                      onDragMove={(e) => updateVertex(s.id, i, [e.target.x(), e.target.y()])}
-                    />
-                  ))
-                )}
+              shapes.map((s) =>
+                s.polygon.map((p, i) => (
+                  <Circle
+                    key={`${s.id}-${i}`}
+                    x={p[0]}
+                    y={p[1]}
+                    radius={10 / scale}
+                    hitStrokeWidth={12 / scale}
+                    fill={s.id === selectedId ? "#2b6cb0" : "#ffffff"}
+                    stroke="#2b6cb0"
+                    strokeWidth={2 / scale}
+                    draggable
+                    onMouseDown={() => setSelectedId(s.id)}
+                    onTouchStart={() => setSelectedId(s.id)}
+                    onDragStart={() => setSelectedId(s.id)}
+                    onDragMove={(e) => updateVertex(s.id, i, [e.target.x(), e.target.y()])}
+                  />
+                ))
+              )}
+            {/* Edge length labels for the selected shape. */}
+            {tool === "edit" &&
+              selShape &&
+              selShape.polygon.map((p, i) => {
+                const q = selShape.polygon[(i + 1) % selShape.polygon.length];
+                return (
+                  <Text
+                    key={`len-${i}`}
+                    x={(p[0] + q[0]) / 2}
+                    y={(p[1] + q[1]) / 2}
+                    text={`${edgeLen(selShape.polygon, i).toFixed(0)}`}
+                    fontSize={14 / scale}
+                    fill="#1a1a1a"
+                    listening={false}
+                  />
+                );
+              })}
           </Layer>
         </Stage>
+
+        {tool === "edit" && (
+          <div style={{ position: "absolute", left: 12, top: 12, background: "rgba(255,255,255,0.97)", border: "1px solid #ddd", borderRadius: 8, padding: "10px 12px", fontSize: 12, width: 250, maxHeight: "70vh", overflowY: "auto" }}>
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Shapes</div>
+            {shapes.length === 0 && <div style={{ color: "#999" }}>Draw a wall first.</div>}
+            {shapes.map((s, idx) => (
+              <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <button
+                  style={{ ...btn(s.id === selectedId), flex: 1, textAlign: "left", padding: "3px 6px" }}
+                  onClick={() => setSelectedId(s.id)}
+                >
+                  {s.kind} {idx + 1}
+                </button>
+                <button style={{ ...btn(false), padding: "3px 6px", color: "crimson" }} onClick={() => deleteShapeById(s.id)}>x</button>
+              </div>
+            ))}
+
+            {selShape && (
+              <div style={{ marginTop: 8, borderTop: "1px solid #eee", paddingTop: 6 }}>
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Corners (cm)</div>
+                {selShape.polygon.map((p, i) => (
+                  <div key={`v${i}`} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 3 }}>
+                    <span style={{ width: 14, color: "#888" }}>{i + 1}</span>
+                    <input type="number" value={Math.round(p[0])} style={{ width: 52 }}
+                      onChange={(e) => setVertexXY(selShape.id, i, parseFloat(e.target.value), p[1])} />
+                    <input type="number" value={Math.round(p[1])} style={{ width: 52 }}
+                      onChange={(e) => setVertexXY(selShape.id, i, p[0], parseFloat(e.target.value))} />
+                    <span style={{ color: "#888" }}>∠</span>
+                    <input type="number" value={Math.round(vertexAngleDeg(selShape.polygon, i))} style={{ width: 46 }}
+                      onChange={(e) => setVertexAngleDeg(selShape.id, i, parseFloat(e.target.value))} />
+                  </div>
+                ))}
+                <div style={{ fontWeight: 700, margin: "6px 0 4px" }}>Edge lengths (cm)</div>
+                {selShape.polygon.map((_, i) => (
+                  <div key={`e${i}`} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 3 }}>
+                    <span style={{ width: 42, color: "#888" }}>{i + 1}&rarr;{((i + 1) % selShape.polygon.length) + 1}</span>
+                    <input type="number" value={Math.round(edgeLen(selShape.polygon, i))} style={{ width: 70 }}
+                      onChange={(e) => setEdgeLength(selShape.id, i, parseFloat(e.target.value))} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div style={{ position: "absolute", left: 12, bottom: 12, background: "rgba(255,255,255,0.95)", border: "1px solid #ddd", borderRadius: 8, padding: "10px 12px", fontSize: 13, minWidth: 180 }}>
           <div style={{ fontWeight: 700, marginBottom: 4 }}>Coverage</div>

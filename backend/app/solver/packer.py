@@ -50,7 +50,8 @@ def solve(walls, negs, stones, params):
     rng = random.Random(params.get("seed", 0))
     gmin = params.get("grout_min_cm", 1.0)
     gmax = params.get("grout_max_cm", 3.0)
-    vgrout = (gmin + gmax) / 2.0
+    # Bias joints toward the minimum so the wall reads as packed stone, not mortar.
+    vgrout = gmin + 0.25 * (gmax - gmin)
     dx = params.get("column_cm", 2.0)
 
     if not walls:
