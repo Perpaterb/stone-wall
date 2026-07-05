@@ -113,6 +113,8 @@ def solve_spiral(walls, negs, stones, params):
         r0 = ar if sr > 0 else ar + 1 - hc
         return r0, r0 + hc, c0, c0 + wc
 
+    counts = [0, 0]  # placed [landscape (rot 0), portrait (rot 90)]
+
     def place_best(r, c):
         free_r = c + 1 < cols and inside[r, c + 1] and occ[r, c + 1] == 0
         free_l = c - 1 >= 0 and inside[r, c - 1] and occ[r, c - 1] == 0
@@ -128,19 +130,30 @@ def solve_spiral(walls, negs, stones, params):
             if scanned > 150:
                 break
             scanned += 1
+            fit = []
             for w, h, rot, wc, hc in ori[i]:
                 c0 = c if sc > 0 else c + 1 - wc
                 r0 = r if sr > 0 else r + 1 - hc
                 if fits(r0, r0 + hc, c0, c0 + wc):
-                    found.append((i, r0, r0 + hc, c0, c0 + wc, w, h, rot))
-                    break
+                    fit.append((i, r0, r0 + hc, c0, c0 + wc, w, h, rot))
+            if not fit:
+                continue
+            # When both orientations fit, keep the under-represented one so the
+            # wall reads ~50/50 portrait/landscape instead of all wide.
+            if len(fit) == 2:
+                fit.sort(key=lambda o: counts[1 if o[7] == 90 else 0])
+            found.append(fit[0])
             if len(found) >= 6:
                 break
         if not found:
             return None
-        # Random pick among the largest few that fit: fills well but keeps variety.
-        i, r0, r1, c0, c1, w, h, rot = rng.choice(found)
+        # Prefer the under-represented orientation among the fitting candidates.
+        desired = 0 if counts[0] <= counts[1] else 1
+        pref = [f for f in found if (1 if f[7] == 90 else 0) == desired]
+        chosen = rng.choice(pref) if pref and rng.random() < 0.7 else rng.choice(found)
+        i, r0, r1, c0, c1, w, h, rot = chosen
         place(i, r0, r1, c0, c1, w, h, rot)
+        counts[1 if rot == 90 else 0] += 1
         return r0, r1, c0, c1
 
     inq = np.zeros((rows, cols), dtype=bool)

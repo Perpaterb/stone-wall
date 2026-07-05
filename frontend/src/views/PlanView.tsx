@@ -52,6 +52,7 @@ export default function PlanView() {
   const [buildMaps, setBuildMaps] = useState<BuildMapSummary[]>([]);
   const [busy, setBusy] = useState(false);
   const [method, setMethod] = useState("spiral");
+  const [seedCount, setSeedCount] = useState(1);
 
   function refreshCoverage() {
     if (!projectId) return;
@@ -117,7 +118,7 @@ export default function PlanView() {
         shapes.map((s, i) => ({ kind: s.kind, polygon: s.polygon, z_order: i }))
       );
       const seed = Math.floor(1 + Math.random() * 100000);
-      const bm = await createBuildMap(projectId, { seed, method });
+      const bm = await createBuildMap(projectId, { seed, method, seeds: seedCount });
       navigate(`/build/${bm.id}`);
     } catch (e) {
       setStatus(String(e));
@@ -586,6 +587,13 @@ export default function PlanView() {
               <option value="skyline">skyline (coursed)</option>
             </select>
           </label>
+          {method === "spiral" && (
+            <label style={{ display: "block", marginBottom: 6 }}>
+              seeds{" "}
+              <input type="number" min={1} max={12} value={seedCount} style={{ width: 50 }}
+                onChange={(e) => setSeedCount(Math.max(1, parseInt(e.target.value) || 1))} />
+            </label>
+          )}
           <button style={{ ...btn(false), width: "100%", marginBottom: 8 }} onClick={genBuildMap} disabled={busy}>
             {busy ? "Solving..." : "Generate build map"}
           </button>

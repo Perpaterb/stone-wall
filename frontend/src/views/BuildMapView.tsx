@@ -188,7 +188,8 @@ export default function BuildMapView() {
     try {
       const seed = Math.floor(1 + Math.random() * 100000);
       const nextMethod = (bm.params?.method as string) || "spiral";
-      const next = await createBuildMap(bm.project_id, { seed, method: nextMethod });
+      const nextSeeds = (bm.params?.seeds as number) || 1;
+      const next = await createBuildMap(bm.project_id, { seed, method: nextMethod, seeds: nextSeeds });
       fittedRef.current = false;
       navigate(`/build/${next.id}`);
     } catch (e) {

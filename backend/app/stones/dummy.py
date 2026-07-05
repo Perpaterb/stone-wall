@@ -28,7 +28,7 @@ def generate_dummy_stone_dicts(
     spread: float = 6.0,
     min_side: float = 10.0,
     max_side: float = 40.0,
-    jitter: float = 0.6,
+    jitter: float = 0.0,  # 0 = perfect 90-degree rectangles
 ) -> list[dict]:
     """Seedable near-rectangular stones matching the real size profile."""
     rng = random.Random(seed)
