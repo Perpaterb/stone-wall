@@ -3,18 +3,25 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
 
 from app.api import buildmaps, photos, plan, projects, stones
 from app.config import settings
 from app.db.base import Base
 from app.db.session import engine
 
+# Idempotent additive column migrations (create_all does not ALTER existing tables).
+_MIGRATIONS = [
+    "ALTER TABLE placements ADD COLUMN IF NOT EXISTS seq INTEGER NOT NULL DEFAULT 0",
+]
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables directly. Alembic migrations are deferred until a schema ALTER
-    # is needed (additive tables are handled fine by create_all).
     Base.metadata.create_all(bind=engine)
+    with engine.begin() as conn:
+        for stmt in _MIGRATIONS:
+            conn.execute(text(stmt))
     os.makedirs(settings.image_dir, exist_ok=True)
     yield
 

@@ -87,7 +87,7 @@ def create_buildmap(
     )
     db.add(bm)
     db.flush()
-    for p in placements:
+    for i, p in enumerate(placements):
         db.add(
             Placement(
                 build_map_id=bm.id,
@@ -98,6 +98,7 @@ def create_buildmap(
                 h_cm=p["h_cm"],
                 rotation_deg=p["rotation_deg"],
                 course_index=p["course_index"],
+                seq=i,
                 cut=p["cut"],
             )
         )
@@ -126,7 +127,7 @@ def get_buildmap(build_map_id: uuid.UUID, db: Session = Depends(get_db)):
         )
         .join(Stone, Stone.id == Placement.stone_id)
         .where(Placement.build_map_id == build_map_id)
-        .order_by(Placement.course_index)
+        .order_by(Placement.seq)
     ).all()
     placements = [
         PlacementOut(

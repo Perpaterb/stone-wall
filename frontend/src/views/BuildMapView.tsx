@@ -44,6 +44,7 @@ export default function BuildMapView() {
   const [busy, setBusy] = useState(false);
   const [showWall, setShowWall] = useState(true);
   const [showSeeds, setShowSeeds] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(100000);
   const [planFallback, setPlanFallback] = useState<{ walls: number[][][]; negs: number[][][] }>({ walls: [], negs: [] });
 
   useEffect(() => {
@@ -92,6 +93,9 @@ export default function BuildMapView() {
   const walls = snapWalls.length ? snapWalls : planFallback.walls;
   const negs = snapNegs.length ? snapNegs : planFallback.negs;
   const seedPoints = (bm?.params?.seed_points as number[][]) ?? [];
+  const total = bm?.placements.length ?? 0;
+  const effectiveVisible = Math.min(visibleCount, total);
+  const shown = bm ? bm.placements.slice(0, effectiveVisible) : [];
 
   const bounds = useMemo(() => {
     if (!bm) return null;
@@ -235,6 +239,23 @@ export default function BuildMapView() {
         <button onClick={() => zoomBy(1 / 1.2)}>&minus;</button>
       </div>
 
+      {bm && total > 0 && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 10px", borderBottom: "1px solid #eee", fontSize: 13 }}>
+          <span style={{ whiteSpace: "nowrap" }}>Placed {effectiveVisible} / {total}</span>
+          <input
+            type="range"
+            min={0}
+            max={total}
+            value={effectiveVisible}
+            onChange={(e) => setVisibleCount(parseInt(e.target.value))}
+            style={{ flex: 1 }}
+          />
+          <button onClick={() => setVisibleCount(Math.max(0, effectiveVisible - 1))}>&minus;1</button>
+          <button onClick={() => setVisibleCount(effectiveVisible + 1)}>+1</button>
+          <button onClick={() => setVisibleCount(100000)}>All</button>
+        </div>
+      )}
+
       {error && <div style={{ padding: 8, color: "crimson" }}>{error}</div>}
 
       <div ref={containerRef} style={{ flex: 1, position: "relative", overflow: "hidden", background: "#f4f4f2" }}>
@@ -263,22 +284,33 @@ export default function BuildMapView() {
             </Layer>
           )}
           <Layer>
-            {bm?.placements.map((p) => (
-              <Line
-                key={p.stone_id}
-                points={placedPoly(p)}
-                closed
-                fill={fillFor(p)}
-                opacity={p.status === "used" ? 0.55 : 1}
-                stroke={p.stone_id === selectedStone ? "#2b6cb0" : p.cut ? "#c0392b" : "#8a7a52"}
-                strokeWidth={(p.stone_id === selectedStone ? 2.4 : p.cut ? 1.6 : 0.8) / scale}
-                hitStrokeWidth={6 / scale}
-                onClick={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
-                onTap={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
-              />
-            ))}
+            {shown.map((p, idx) => {
+              const isCurrent = idx === shown.length - 1 && effectiveVisible < total;
+              return (
+                <Line
+                  key={p.stone_id}
+                  points={placedPoly(p)}
+                  closed
+                  fill={fillFor(p)}
+                  opacity={p.status === "used" ? 0.55 : 1}
+                  stroke={
+                    isCurrent
+                      ? "#e5a000"
+                      : p.stone_id === selectedStone
+                        ? "#2b6cb0"
+                        : p.cut
+                          ? "#c0392b"
+                          : "#8a7a52"
+                  }
+                  strokeWidth={(isCurrent ? 3.5 : p.stone_id === selectedStone ? 2.4 : p.cut ? 1.6 : 0.8) / scale}
+                  hitStrokeWidth={6 / scale}
+                  onClick={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
+                  onTap={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
+                />
+              );
+            })}
             {showLabels &&
-              bm?.placements.map((p) => (
+              shown.map((p) => (
                 <Text
                   key={`t${p.stone_id}`}
                   x={p.x_cm}

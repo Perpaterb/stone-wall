@@ -142,6 +142,7 @@ class Placement(Base):
     h_cm: Mapped[float] = mapped_column(Float, nullable=False)  # placed vertical size
     rotation_deg: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     course_index: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # placement order
     cut: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     grout_edges: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
