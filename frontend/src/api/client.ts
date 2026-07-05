@@ -227,7 +227,7 @@ export interface PhotoInfo {
   span_y_cm: number;
 }
 
-export function cropUrl(s: Stone): string | null {
+export function cropUrl(s: { crop_path: string | null }): string | null {
   return s.crop_path ? `/api/images/${s.crop_path}` : null;
 }
 
