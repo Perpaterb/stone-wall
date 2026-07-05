@@ -15,6 +15,7 @@ from app.schemas.buildmap import (
     PlacementOut,
 )
 from app.solver.packer import solve
+from app.solver.packer_spiral import solve_spiral
 
 router = APIRouter(tags=["buildmaps"])
 
@@ -55,14 +56,20 @@ def create_buildmap(
     ]
 
     seed = payload.seed if payload.seed is not None else 1
+    method = payload.method or "spiral"
     params = {
         "seed": seed,
+        "method": method,
+        "seeds": payload.seeds,
         "grout_min_cm": project.grout_min_cm,
         "grout_max_cm": project.grout_max_cm,
         "stagger_min_cm": payload.stagger_min_cm,
         "through_stone_prob": payload.through_stone_prob,
     }
-    placements, report = solve(walls, negs, stones, params)
+    if method == "spiral":
+        placements, report = solve_spiral(walls, negs, stones, params)
+    else:
+        placements, report = solve(walls, negs, stones, params)
     # Snapshot the wall shapes into the build map so its view can draw the wall
     # even if the plan changes later.
     params["walls"] = walls

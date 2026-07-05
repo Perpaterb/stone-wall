@@ -51,6 +51,7 @@ export default function PlanView() {
   const [serverCoverage, setServerCoverage] = useState<Coverage | null>(null);
   const [buildMaps, setBuildMaps] = useState<BuildMapSummary[]>([]);
   const [busy, setBusy] = useState(false);
+  const [method, setMethod] = useState("spiral");
 
   function refreshCoverage() {
     if (!projectId) return;
@@ -116,7 +117,7 @@ export default function PlanView() {
         shapes.map((s, i) => ({ kind: s.kind, polygon: s.polygon, z_order: i }))
       );
       const seed = Math.floor(1 + Math.random() * 100000);
-      const bm = await createBuildMap(projectId, { seed });
+      const bm = await createBuildMap(projectId, { seed, method });
       navigate(`/build/${bm.id}`);
     } catch (e) {
       setStatus(String(e));
@@ -578,8 +579,15 @@ export default function PlanView() {
             <button style={btn(false)} onClick={clearStonesFn} disabled={busy}>Clear</button>
           </div>
           <div style={{ fontWeight: 700, marginBottom: 6 }}>Build maps</div>
+          <label style={{ display: "block", marginBottom: 6 }}>
+            style{" "}
+            <select value={method} onChange={(e) => setMethod(e.target.value)}>
+              <option value="spiral">spiral (rubble)</option>
+              <option value="skyline">skyline (coursed)</option>
+            </select>
+          </label>
           <button style={{ ...btn(false), width: "100%", marginBottom: 8 }} onClick={genBuildMap} disabled={busy}>
-            Generate build map
+            {busy ? "Solving..." : "Generate build map"}
           </button>
           <div style={{ maxHeight: 200, overflowY: "auto" }}>
             {buildMaps.length === 0 && <div style={{ color: "#999" }}>none yet</div>}

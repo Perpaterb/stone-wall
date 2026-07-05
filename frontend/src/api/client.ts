@@ -145,7 +145,7 @@ export async function clearStones(projectId: string): Promise<{ deleted: number 
 
 export async function createBuildMap(
   projectId: string,
-  body: { name?: string; seed?: number }
+  body: { name?: string; seed?: number; method?: string; seeds?: number }
 ): Promise<BuildMapSummary> {
   const res = await fetch(`${BASE}/projects/${projectId}/buildmaps`, {
     method: "POST",
