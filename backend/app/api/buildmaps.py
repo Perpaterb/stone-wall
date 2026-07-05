@@ -66,14 +66,16 @@ def create_buildmap(
         "stagger_min_cm": payload.stagger_min_cm,
         "through_stone_prob": payload.through_stone_prob,
     }
+    seed_points: list = []
     if method == "spiral":
-        placements, report = solve_spiral(walls, negs, stones, params)
+        placements, report, seed_points = solve_spiral(walls, negs, stones, params)
     else:
         placements, report = solve(walls, negs, stones, params)
-    # Snapshot the wall shapes into the build map so its view can draw the wall
-    # even if the plan changes later.
+    # Snapshot the wall shapes + seed points into the build map so its view can
+    # draw them even if the plan changes later.
     params["walls"] = walls
     params["negatives"] = negs
+    params["seed_points"] = seed_points
 
     bm = BuildMap(
         project_id=project_id,

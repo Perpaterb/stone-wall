@@ -35,7 +35,7 @@ def solve_spiral(walls, negs, stones, params):
     n_seeds = int(params.get("seeds", 4))
 
     if not walls or not stones:
-        return [], _empty_report(len(stones))
+        return [], _empty_report(len(stones)), []
 
     pts = [p for w in walls for p in w]
     min_x = min(p[0] for p in pts)
@@ -160,9 +160,9 @@ def solve_spiral(walls, negs, stones, params):
             enqueue(r, c1)
 
     # Seed stones at random valid points (multiple nucleation sites).
-    placed_seeds = 0
+    seed_points: list[list[float]] = []
     tries = 0
-    while placed_seeds < n_seeds and tries < n_seeds * 80:
+    while len(seed_points) < n_seeds and tries < n_seeds * 80:
         tries += 1
         r = rng.randrange(rows)
         c = rng.randrange(cols)
@@ -179,7 +179,9 @@ def solve_spiral(walls, negs, stones, params):
         if fits(r0, r0 + hc, c0, c0 + wc):
             place(idx, r0, r0 + hc, c0, c0 + wc, w, h, rot)
             enqueue_border(r0, r0 + hc, c0, c0 + wc)
-            placed_seeds += 1
+            cx = min_x + (c0 + wc / 2) * cell
+            cy = min_y + (r0 + hc / 2) * cell
+            seed_points.append([round(cx, 1), round(cy, 1)])
 
     # Grow outward: each frontier cell (free, touching packed stone) is tried
     # once (BFS from the seeds). A placed stone exposes new frontier cells. This
@@ -197,7 +199,7 @@ def solve_spiral(walls, negs, stones, params):
             enqueue_border(*blk)
 
     free_area = float((inside & (occ == 0)).sum()) * cell * cell
-    return placements, _build_report(placements, stones, walls, negs, free_area)
+    return placements, _build_report(placements, stones, walls, negs, free_area), seed_points
 
 
 def _empty_report(n_available=0):

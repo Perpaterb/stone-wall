@@ -1,6 +1,6 @@
 import Konva from "konva";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Layer, Line, Stage, Text } from "react-konva";
+import { Circle, Layer, Line, Stage, Text } from "react-konva";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
@@ -42,6 +42,8 @@ export default function BuildMapView() {
   const [selectedStone, setSelectedStone] = useState<string | null>(null);
   const [markMode, setMarkMode] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [showWall, setShowWall] = useState(true);
+  const [showSeeds, setShowSeeds] = useState(false);
   const [planFallback, setPlanFallback] = useState<{ walls: number[][][]; negs: number[][][] }>({ walls: [], negs: [] });
 
   useEffect(() => {
@@ -89,6 +91,7 @@ export default function BuildMapView() {
   const snapNegs = (bm?.params?.negatives as number[][][]) ?? [];
   const walls = snapWalls.length ? snapWalls : planFallback.walls;
   const negs = snapNegs.length ? snapNegs : planFallback.negs;
+  const seedPoints = (bm?.params?.seed_points as number[][]) ?? [];
 
   const bounds = useMemo(() => {
     if (!bm) return null;
@@ -214,6 +217,12 @@ export default function BuildMapView() {
         <strong>{bm?.name ?? "Build map"}</strong>
         {bm && <span style={{ color: "#888" }}>seed {bm.seed}</span>}
         <span style={{ flex: 1 }} />
+        <button onClick={() => setShowWall((v) => !v)} style={{ fontWeight: showWall ? 700 : 400, background: showWall ? "#eef" : "#fff" }}>
+          Wall
+        </button>
+        <button onClick={() => setShowSeeds((v) => !v)} style={{ fontWeight: showSeeds ? 700 : 400, background: showSeeds ? "#fde8e8" : "#fff" }}>
+          Seeds
+        </button>
         <button
           onClick={() => setMarkMode((m) => !m)}
           style={{ fontWeight: markMode ? 700 : 400, background: markMode ? "#d9f2d9" : "#fff" }}
@@ -242,14 +251,16 @@ export default function BuildMapView() {
             if (e.target === e.target.getStage()) setPos({ x: e.target.x(), y: e.target.y() });
           }}
         >
-          <Layer listening={false}>
-            {walls.map((poly, i) => (
-              <Line key={`w${i}`} points={poly.flat()} closed fill="#d9d5cc" stroke="#6b6252" strokeWidth={2 / scale} />
-            ))}
-            {negs.map((poly, i) => (
-              <Line key={`n${i}`} points={poly.flat()} closed fill="#f4f4f2" stroke="#999" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} />
-            ))}
-          </Layer>
+          {showWall && (
+            <Layer listening={false}>
+              {walls.map((poly, i) => (
+                <Line key={`w${i}`} points={poly.flat()} closed fill="#d9d5cc" stroke="#6b6252" strokeWidth={2 / scale} />
+              ))}
+              {negs.map((poly, i) => (
+                <Line key={`n${i}`} points={poly.flat()} closed fill="#f4f4f2" stroke="#999" strokeWidth={1.5 / scale} dash={[6 / scale, 4 / scale]} />
+              ))}
+            </Layer>
+          )}
           <Layer>
             {bm?.placements.map((p) => (
               <Line
@@ -280,6 +291,26 @@ export default function BuildMapView() {
                 />
               ))}
           </Layer>
+          {showSeeds && (
+            <Layer listening={false}>
+              {seedPoints.map((p, i) => (
+                <Circle key={`seed${i}`} x={p[0]} y={p[1]} radius={9 / scale} fill="#e53e3e" stroke="#fff" strokeWidth={2 / scale} />
+              ))}
+              {seedPoints.map((p, i) => (
+                <Text
+                  key={`seedt${i}`}
+                  x={p[0] - 20}
+                  y={p[1] + 10 / scale}
+                  width={40}
+                  align="center"
+                  text={`seed ${i + 1}`}
+                  fontSize={13 / scale}
+                  fill="#c0392b"
+                  listening={false}
+                />
+              ))}
+            </Layer>
+          )}
         </Stage>
 
         {r && (
