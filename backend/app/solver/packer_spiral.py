@@ -21,7 +21,7 @@ from app.solver.geometry import region_intervals_at
 
 # Bump when the algorithm changes so the UI can show which version ran.
 VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
-BEAM_VERSION = "beam-8 (evenly-spread seeds, per-seed round-robin)"
+BEAM_VERSION = "beam-9 (stones kept inside the wall, evenly-spread seeds)"
 
 
 def _orientations(stone):
@@ -53,10 +53,10 @@ def solve_spiral(walls, negs, stones, params):
     mode = params.get("mode", "spiral")
     allow_edge = params.get("allow_edge_cut", True)
     if mode == "beam":
-        # Beam mode does not restrict overhang at all.
-        allow_edge = True
-        min_inside = params.get("min_inside_frac", 0.0)
-        pad = 42.0
+        # Beam mode keeps stones inside the wall (no overhang) by default.
+        allow_edge = params.get("allow_edge_cut", False)
+        min_inside = params.get("min_inside_frac", 1.0)
+        pad = 42.0 if allow_edge else 4.0
     else:
         min_inside = params.get("min_inside_frac", 0.5)
         pad = 22.0 if allow_edge else 0.0
