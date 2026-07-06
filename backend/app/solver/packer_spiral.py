@@ -14,14 +14,13 @@ size are simple array checks. 90-degree rotations keep every stone axis-aligned.
 
 import math
 import random
-from collections import deque
 
 import numpy as np
 
 from app.solver.geometry import region_intervals_at
 
 # Bump when the spiral algorithm changes so the UI can show which version ran.
-VERSION = "spiral-4 (frontier BFS, edge-cut, 50/50 rot)"
+VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
 
 
 def _orientations(stone):
@@ -175,21 +174,17 @@ def solve_spiral(walls, negs, stones, params):
         counts[1 if rot == 90 else 0] += 1
         return r0, r1, c0, c1
 
-    inq = np.zeros((rows, cols), dtype=bool)
-    frontier: deque = deque()
+    frontier: set = set()
 
-    def enqueue(r, c):
-        if 0 <= r < rows and 0 <= c < cols and inside[r, c] and occ[r, c] == 0 and not inq[r, c]:
-            inq[r, c] = True
-            frontier.append((r, c))
-
-    def enqueue_border(r0, r1, c0, c1):
-        for c in range(c0 - 1, c1 + 1):
-            enqueue(r0 - 1, c)
-            enqueue(r1, c)
-        for r in range(r0 - 1, r1 + 1):
-            enqueue(r, c0 - 1)
-            enqueue(r, c1)
+    def add_frontier(r0, r1, c0, c1):
+        for cc in range(c0 - 1, c1 + 1):
+            for rr in (r0 - 1, r1):
+                if 0 <= rr < rows and 0 <= cc < cols and inside[rr, cc] and occ[rr, cc] == 0:
+                    frontier.add((rr, cc))
+        for rr in range(r0 - 1, r1 + 1):
+            for cc in (c0 - 1, c1):
+                if 0 <= rr < rows and 0 <= cc < cols and inside[rr, cc] and occ[rr, cc] == 0:
+                    frontier.add((rr, cc))
 
     # Seed stones at random valid points (multiple nucleation sites).
     seed_points: list[list[float]] = []
@@ -210,25 +205,52 @@ def solve_spiral(walls, negs, stones, params):
         r0, c0 = r - hc // 2, c - wc // 2
         if fits(r0, r0 + hc, c0, c0 + wc):
             place(idx, r0, r0 + hc, c0, c0 + wc, w, h, rot)
-            enqueue_border(r0, r0 + hc, c0, c0 + wc)
+            add_frontier(r0, r0 + hc, c0, c0 + wc)
             cx = ox + (c0 + wc / 2) * cell
             cy = oy + (r0 + hc / 2) * cell
             seed_points.append([round(cx, 1), round(cy, 1)])
 
-    # Grow outward: each frontier cell (free, touching packed stone) is tried
-    # once (BFS from the seeds). A placed stone exposes new frontier cells. This
-    # fills the wall organically and stops when nothing more fits.
+    # Grow in a CLOCKWISE SPIRAL around the seed(s). Each step picks the frontier
+    # cell that is the next one clockwise from the current sweep angle (inner
+    # radius first), so stones wind around the cluster in order instead of the
+    # jumpy breadth-first fill. With y down, increasing atan2 angle sweeps
+    # east -> south -> west -> north, i.e. clockwise.
+    if seed_points:
+        sx = sum(p[0] for p in seed_points) / len(seed_points)
+        sy = sum(p[1] for p in seed_points) / len(seed_points)
+    else:
+        sx, sy = (min_x + max_x) / 2.0, (min_y + max_y) / 2.0
+
+    two_pi = 2.0 * math.pi
+    theta = 0.0
     safety = 0
     max_iter = rows * cols
     while frontier and safety < max_iter:
         safety += 1
-        r, c = frontier.popleft()
-        inq[r, c] = False
-        if occ[r, c] != 0 or not adj_occupied(r, c):
-            continue
+        best = None
+        best_key = None
+        stale = []
+        for (r, c) in frontier:
+            if occ[r, c] != 0 or not adj_occupied(r, c):
+                stale.append((r, c))
+                continue
+            x = ox + (c + 0.5) * cell
+            y = oy + (r + 0.5) * cell
+            ang = math.atan2(y - sy, x - sx)
+            key = ((ang - theta) % two_pi, math.hypot(x - sx, y - sy))
+            if best_key is None or key < best_key:
+                best_key = key
+                best = (r, c, ang)
+        for s in stale:
+            frontier.discard(s)
+        if best is None:
+            break
+        r, c, ang = best
+        frontier.discard((r, c))
+        theta = ang
         blk = place_best(r, c)
         if blk is not None:
-            enqueue_border(*blk)
+            add_frontier(*blk)
 
     free_area = float((inside & (occ == 0)).sum()) * cell * cell
     return placements, _build_report(placements, stones, walls, negs, free_area), seed_points
