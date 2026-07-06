@@ -21,7 +21,7 @@ from app.solver.geometry import region_intervals_at
 
 # Bump when the algorithm changes so the UI can show which version ran.
 VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
-BEAM_VERSION = "beam-5 (flush, no <5cm slivers, nearest-empty)"
+BEAM_VERSION = "beam-6 (beam-5 + compaction pass to close small holes)"
 
 
 def _orientations(stone):
@@ -35,6 +35,7 @@ def _orientations(stone):
 def solve_spiral(walls, negs, stones, params):
     rng = random.Random(params.get("seed", 0))
     cell = params.get("cell_cm", 0.5)
+    gmax = params.get("grout_max_cm", 0.3)
     n_seeds = int(params.get("seeds", 4))
 
     if not walls or not stones:
@@ -122,6 +123,11 @@ def solve_spiral(walls, negs, stones, params):
                 "rotation_deg": rot,
                 "course_index": course,
                 "cut": cut,
+                "_idx": idx,
+                "_r0": r0,
+                "_r1": r1,
+                "_c0": c0,
+                "_c1": c1,
             }
         )
 
@@ -400,6 +406,127 @@ def solve_spiral(walls, negs, stones, params):
         counts[1 if rot == 90 else 0] += 1
         return r0, r1, c0, c1
 
+    grout_cells = max(1, int(round(gmax / cell)))
+
+    def _components(r0, r1, c0, c1):
+        """Empty-inside connected components in a window: list of bad-gap bboxes
+        (min dim > grout, < 5cm), and the total cell count of those. Iterates
+        only the empty cells so it stays cheap."""
+        r0 = max(0, r0); r1 = min(rows, r1); c0 = max(0, c0); c1 = min(cols, c1)
+        if r1 <= r0 or c1 <= c0:
+            return [], 0
+        sub = inside[r0:r1, c0:c1] & (occ[r0:r1, c0:c1] == 0)
+        seen = np.zeros_like(sub)
+        hh, ww = sub.shape
+        bad_cells = 0
+        boxes = []
+        for y, x in np.argwhere(sub):
+            if seen[y, x]:
+                continue
+            st = [(y, x)]
+            seen[y, x] = True
+            cells = []
+            while st:
+                a, b = st.pop()
+                cells.append((a, b))
+                for da, db in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    na, nb = a + da, b + db
+                    if 0 <= na < hh and 0 <= nb < ww and sub[na, nb] and not seen[na, nb]:
+                        seen[na, nb] = True
+                        st.append((na, nb))
+            ys = [a for a, b in cells]
+            xs = [b for a, b in cells]
+            md = min(max(xs) - min(xs) + 1, max(ys) - min(ys) + 1)
+            if grout_cells < md < min_gap:
+                bad_cells += len(cells)
+                boxes.append((r0 + min(ys), r0 + max(ys) + 1, c0 + min(xs), c0 + max(xs) + 1))
+        return boxes, bad_cells
+
+    def _try_shift(seed, dr, dc):
+        """Shift a stone group by (dr,dc) cells to close a hole, only if it does
+        not overlap and it reduces the local bad-gap area; else roll back."""
+        idx_to_k = {placements[k2]["_idx"]: k2 for k2 in range(len(placements))}
+        group = set(seed)
+        guard = 0
+        changed = True
+        while changed and len(group) <= 8 and guard < 30:
+            guard += 1
+            changed = False
+            for k in list(group):
+                p = placements[k]
+                nr0, nr1, nc0, nc1 = p["_r0"] + dr, p["_r1"] + dr, p["_c0"] + dc, p["_c1"] + dc
+                if nr0 < 0 or nc0 < 0 or nr1 > rows or nc1 > cols:
+                    return False
+                for v in np.unique(occ[nr0:nr1, nc0:nc1]):
+                    if v == 0:
+                        continue
+                    j = idx_to_k.get(int(v) - 1)
+                    if j is not None and j not in group:
+                        group.add(j)
+                        changed = True
+        if len(group) > 8:
+            return False
+        old = {k: (placements[k]["_r0"], placements[k]["_r1"], placements[k]["_c0"], placements[k]["_c1"], placements[k]["_idx"]) for k in group}
+        wr0 = min(v[0] for v in old.values()) + min(dr, 0) - min_gap
+        wr1 = max(v[1] for v in old.values()) + max(dr, 0) + min_gap
+        wc0 = min(v[2] for v in old.values()) + min(dc, 0) - min_gap
+        wc1 = max(v[3] for v in old.values()) + max(dc, 0) + min_gap
+        _, before = _components(wr0, wr1, wc0, wc1)
+        for k in group:
+            r0, r1, c0, c1, _ = old[k]
+            occ[r0:r1, c0:c1] = 0
+        overlap = False
+        for k in group:
+            r0, r1, c0, c1, _ = old[k]
+            if (occ[r0 + dr:r1 + dr, c0 + dc:c1 + dc] != 0).any():
+                overlap = True
+                break
+        if overlap:
+            for k in group:
+                r0, r1, c0, c1, idx = old[k]
+                occ[r0:r1, c0:c1] = idx + 1
+            return False
+        for k in group:
+            r0, r1, c0, c1, idx = old[k]
+            occ[r0 + dr:r1 + dr, c0 + dc:c1 + dc] = idx + 1
+        _, after = _components(wr0, wr1, wc0, wc1)
+        if after < before:
+            for k in group:
+                r0, r1, c0, c1, idx = old[k]
+                p = placements[k]
+                p["_r0"], p["_r1"], p["_c0"], p["_c1"] = r0 + dr, r1 + dr, c0 + dc, c1 + dc
+                p["x_cm"] = round(ox + (c0 + dc) * cell, 2)
+                p["y_cm"] = round(oy + (r0 + dr) * cell, 2)
+            return True
+        for k in group:
+            r0, r1, c0, c1, idx = old[k]
+            occ[r0 + dr:r1 + dr, c0 + dc:c1 + dc] = 0
+        for k in group:
+            r0, r1, c0, c1, idx = old[k]
+            occ[r0:r1, c0:c1] = idx + 1
+        return False
+
+    def compact(wr0=0, wr1=None, wc0=0, wc1=None):
+        wr1 = rows if wr1 is None else wr1
+        wc1 = cols if wc1 is None else wc1
+        boxes, _ = _components(wr0, wr1, wc0, wc1)
+        for r0, r1, c0, c1 in boxes:
+            bw, bh = c1 - c0, r1 - r0
+            if bw <= bh:
+                right = {j for j, q in enumerate(placements) if q["_c0"] == c1 and q["_r0"] < r1 and r0 < q["_r1"]}
+                left = {j for j, q in enumerate(placements) if q["_c1"] == c0 and q["_r0"] < r1 and r0 < q["_r1"]}
+                if right and _try_shift(right, 0, -bw):
+                    continue
+                if left and _try_shift(left, 0, bw):
+                    continue
+            else:
+                down = {j for j, q in enumerate(placements) if q["_r0"] == r1 and q["_c0"] < c1 and c0 < q["_c1"]}
+                up = {j for j, q in enumerate(placements) if q["_r1"] == r0 and q["_c0"] < c1 and c0 < q["_c1"]}
+                if down and _try_shift(down, -bh, 0):
+                    continue
+                if up and _try_shift(up, bh, 0):
+                    continue
+
     frontier: set = set()
 
     def add_frontier(r0, r1, c0, c1):
@@ -469,6 +596,7 @@ def solve_spiral(walls, negs, stones, params):
     two_pi = 2.0 * math.pi
     theta = 0.0
     safety = 0
+    placed_since = 0
     max_iter = rows * cols
     while frontier and safety < max_iter:
         safety += 1
@@ -503,6 +631,19 @@ def solve_spiral(walls, negs, stones, params):
         blk = place_beam5(r, c) if mode == "beam" else place_best(r, c)
         if blk is not None:
             add_frontier(*blk)
+            placed_since += 1
+            if mode == "beam" and placed_since >= 10:
+                recent = placements[-placed_since:]
+                compact(
+                    min(p["_r0"] for p in recent) - min_gap,
+                    max(p["_r1"] for p in recent) + min_gap,
+                    min(p["_c0"] for p in recent) - min_gap,
+                    max(p["_c1"] for p in recent) + min_gap,
+                )
+                placed_since = 0
+
+    if mode == "beam":
+        compact()  # final full-grid pass
 
     free_area = float((inside & (occ == 0)).sum()) * cell * cell
     return placements, _build_report(placements, stones, walls, negs, free_area), seed_points
