@@ -2,7 +2,7 @@ import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.db.models import BuildMap, PlanShape, Placement, Project, Stone, UsageEvent
@@ -12,9 +12,11 @@ from app.schemas.buildmap import (
     BuildMapDetail,
     BuildMapSummary,
     ManualBuildMapIn,
+    ManualPlaceIn,
     MarkUsedIn,
     PlacementOut,
 )
+from app.schemas.stone import StoneRead
 from app.solver.packer import VERSION as SKYLINE_VERSION
 from app.solver.packer import solve
 from app.solver.packer_spiral import BEAM_VERSION
@@ -214,6 +216,7 @@ def get_buildmap(build_map_id: uuid.UUID, db: Session = Depends(get_db)):
     ).all()
     placements = [
         PlacementOut(
+            id=pl.id,
             stone_id=pl.stone_id,
             code=code,
             x_cm=pl.x_cm,
@@ -268,6 +271,119 @@ def mark_used(
     )
     db.commit()
     return {"stone_id": str(stone_id), "status": stone.status}
+
+
+@router.post("/buildmaps/{build_map_id}/placements", response_model=PlacementOut)
+def manual_place(
+    build_map_id: uuid.UUID, payload: ManualPlaceIn, db: Session = Depends(get_db)
+):
+    """Manually place a stone into a rectangle. If the stone is bigger than the
+    rectangle it is flagged as a planned cut (to be cut in the real world later)."""
+    bm = db.get(BuildMap, build_map_id)
+    if bm is None:
+        raise HTTPException(status_code=404, detail="Build map not found")
+    stone = db.scalar(
+        select(Stone).where(Stone.project_id == bm.project_id, Stone.code == payload.stone_code)
+    )
+    if stone is None:
+        raise HTTPException(status_code=404, detail="Stone not found")
+
+    if payload.rotation_deg == 90:
+        sw, sh = stone.height_cm, stone.width_cm
+    else:
+        sw, sh = stone.width_cm, stone.height_cm
+    cut = None
+    if sw > payload.w_cm + 0.3 or sh > payload.h_cm + 0.3:
+        cut = {"planned": True, "orig_w": round(sw, 1), "orig_h": round(sh, 1)}
+
+    max_seq = db.scalar(
+        select(func.coalesce(func.max(Placement.seq), -1)).where(
+            Placement.build_map_id == build_map_id
+        )
+    )
+    pl = Placement(
+        build_map_id=build_map_id,
+        stone_id=stone.id,
+        x_cm=payload.x_cm,
+        y_cm=payload.y_cm,
+        w_cm=payload.w_cm,
+        h_cm=payload.h_cm,
+        rotation_deg=payload.rotation_deg,
+        course_index=0,
+        seq=max_seq + 1,
+        cut=cut,
+    )
+    db.add(pl)
+    stone.status = "used"
+    db.commit()
+    db.refresh(pl)
+    return PlacementOut(
+        id=pl.id, stone_id=stone.id, code=stone.code, x_cm=pl.x_cm, y_cm=pl.y_cm,
+        w_cm=pl.w_cm, h_cm=pl.h_cm, rotation_deg=pl.rotation_deg, course_index=0,
+        cut=pl.cut, status=stone.status, crop_path=stone.crop_path, polygon=stone.polygon,
+    )
+
+
+@router.delete("/placements/{placement_id}")
+def delete_placement(placement_id: uuid.UUID, db: Session = Depends(get_db)):
+    pl = db.get(Placement, placement_id)
+    if pl is None:
+        raise HTTPException(status_code=404, detail="Placement not found")
+    stone = db.get(Stone, pl.stone_id)
+    if stone is not None and stone.status == "used":
+        stone.status = "available"  # freed to be placed elsewhere
+    db.delete(pl)
+    db.commit()
+    return {"deleted": True}
+
+
+@router.post("/placements/{placement_id}/cut", response_model=StoneRead)
+def cut_placement(placement_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Cut in the real world: shrink the original stone to the placed size and
+    create the leftover offcut as a new available stone."""
+    pl = db.get(Placement, placement_id)
+    if pl is None:
+        raise HTTPException(status_code=404, detail="Placement not found")
+    stone = db.get(Stone, pl.stone_id)
+    project = db.get(Project, stone.project_id)
+    if pl.rotation_deg == 90:
+        sw, sh = stone.height_cm, stone.width_cm
+    else:
+        sw, sh = stone.width_cm, stone.height_cm
+    kerf = 0.2  # 2mm cut
+    if sw > pl.w_cm + 0.3:
+        off = (sw - pl.w_cm - kerf, pl.h_cm)
+    elif sh > pl.h_cm + 0.3:
+        off = (pl.w_cm, sh - pl.h_cm - kerf)
+    else:
+        raise HTTPException(status_code=400, detail="Nothing to cut")
+
+    ow, oh = max(off), min(off)
+    if oh < 2:
+        offcut_code = None
+    else:
+        project.stone_counter += 1
+        offcut_code = f"S{project.stone_counter:04d}"
+        db.add(Stone(
+            project_id=stone.project_id, code=offcut_code,
+            width_cm=round(ow, 1), height_cm=round(oh, 1), area_cm2=round(ow * oh, 1),
+            polygon=[[0, 0], [round(ow, 1), 0], [round(ow, 1), round(oh, 1)], [0, round(oh, 1)]],
+            status="available", notes=f"offcut of {stone.code}",
+        ))
+
+    # Shrink the original stone to the placed size (normalise width >= height).
+    pw = max(pl.w_cm, pl.h_cm)
+    ph = min(pl.w_cm, pl.h_cm)
+    stone.width_cm = round(pw, 1)
+    stone.height_cm = round(ph, 1)
+    stone.area_cm2 = round(pw * ph, 1)
+    stone.polygon = [[0, 0], [round(pw, 1), 0], [round(pw, 1), round(ph, 1)], [0, round(ph, 1)]]
+    pl.cut = {"done": True, "offcut_code": offcut_code, "orig_w": round(sw, 1), "orig_h": round(sh, 1)}
+    db.commit()
+
+    offcut = db.scalar(select(Stone).where(Stone.code == offcut_code, Stone.project_id == stone.project_id)) if offcut_code else stone
+    db.refresh(offcut)
+    return offcut
 
 
 @router.delete("/buildmaps/{build_map_id}")

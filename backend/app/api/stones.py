@@ -96,6 +96,36 @@ def confirm_stones(
     return confirmed
 
 
+@router.get("/projects/{project_id}/stones/fit", response_model=list[StoneRead])
+def fit_stones(
+    project_id: uuid.UUID,
+    w: float,
+    h: float,
+    db: Session = Depends(get_db),
+):
+    """Available stones whose width or height can fill the selection's width or
+    height (>= target - grout, and not wildly bigger); minimal-cut first. The
+    other dimension can be anything (it will be cut)."""
+    project = db.get(Project, project_id)
+    gmax = project.grout_max_cm if project else 0.3
+    stones = db.scalars(
+        select(Stone).where(Stone.project_id == project_id, Stone.status == "available")
+    ).all()
+    scored = []
+    for s in stones:
+        best = None
+        for d in (s.width_cm, s.height_cm):
+            for target in (w, h):
+                if d >= target - gmax and d <= target + 30:  # fills target, cuttable
+                    excess = abs(d - target)
+                    if best is None or excess < best:
+                        best = excess
+        if best is not None:
+            scored.append((best, s))
+    scored.sort(key=lambda x: x[0])
+    return [s for _, s in scored]
+
+
 @router.get("/projects/{project_id}/stones", response_model=list[StoneRead])
 def list_stones(
     project_id: uuid.UUID,

@@ -25,6 +25,7 @@ class BuildMapSummary(BaseModel):
 
 
 class PlacementOut(BaseModel):
+    id: uuid.UUID
     stone_id: uuid.UUID
     code: str
     x_cm: float
@@ -37,6 +38,15 @@ class PlacementOut(BaseModel):
     status: str
     crop_path: str | None
     polygon: list[list[float]]
+
+
+class ManualPlaceIn(BaseModel):
+    stone_code: str
+    x_cm: float
+    y_cm: float
+    w_cm: float
+    h_cm: float
+    rotation_deg: float = 0.0
 
 
 class BuildMapDetail(BaseModel):
