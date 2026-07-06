@@ -21,7 +21,7 @@ from app.solver.geometry import region_intervals_at
 
 # Bump when the algorithm changes so the UI can show which version ran.
 VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
-BEAM_VERSION = "beam-2 (biggest seed at corner, nearest-empty fill, overhang ok)"
+BEAM_VERSION = "beam-3 (biggest seed, off-centre inside, nearest-empty fill)"
 
 
 def _orientations(stone):
@@ -206,15 +206,19 @@ def solve_spiral(walls, negs, stones, params):
             continue
         if mode == "beam":
             # Beam: the seed point is the beam origin; the BIGGEST available stone
-            # is placed with that point at its top-left corner (not centred), so
-            # the first stone sits under/beside the seed point.
+            # is placed so the seed point sits INSIDE it, off-centre (not the exact
+            # centre, not on an edge).
             idx = next((i for i in order if i not in used), None)
             if idx is None:
                 break
             w, h, rot, wc, hc = ori[idx][0]
-            if fits(r, r + hc, c, c + wc):
-                place(idx, r, r + hc, c, c + wc, w, h, rot)
-                add_frontier(r, r + hc, c, c + wc)
+            fr = rng.choice([rng.uniform(0.28, 0.42), rng.uniform(0.58, 0.72)])
+            fc = rng.choice([rng.uniform(0.28, 0.42), rng.uniform(0.58, 0.72)])
+            r0 = r - int(round(hc * fr))
+            c0 = c - int(round(wc * fc))
+            if fits(r0, r0 + hc, c0, c0 + wc):
+                place(idx, r0, r0 + hc, c0, c0 + wc, w, h, rot)
+                add_frontier(r0, r0 + hc, c0, c0 + wc)
                 seed_points.append(
                     [round(ox + (c + 0.5) * cell, 1), round(oy + (r + 0.5) * cell, 1)]
                 )
