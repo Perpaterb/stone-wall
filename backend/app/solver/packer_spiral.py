@@ -21,7 +21,7 @@ from app.solver.geometry import region_intervals_at
 
 # Bump when the algorithm changes so the UI can show which version ran.
 VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
-BEAM_VERSION = "beam-3 (biggest seed, off-centre inside, nearest-empty fill)"
+BEAM_VERSION = "beam-4 (flush-to-wall, long side along constraint, nearest-empty)"
 
 
 def _orientations(stone):
@@ -183,6 +183,113 @@ def solve_spiral(walls, negs, stones, params):
         counts[1 if rot == 90 else 0] += 1
         return r0, r1, c0, c1
 
+    def place_flush(r, c):
+        """Place a stone flush against the cluster wall at the beam point.
+
+        Finds which side the cluster is on, presses the stone's edge flush against
+        that wall (not corner-anchored), slides it along the wall to cover the beam
+        point, and prefers the orientation that puts the stone's long side along
+        the constraint. Fills 3-sided pockets because only a fitting stone passes.
+        """
+        if c > 0 and occ[r, c - 1] > 0:
+            side = "L"
+        elif c + 1 < cols and occ[r, c + 1] > 0:
+            side = "R"
+        elif r > 0 and occ[r - 1, c] > 0:
+            side = "U"
+        elif r + 1 < rows and occ[r + 1, c] > 0:
+            side = "D"
+        else:
+            return None
+        vertical = side in ("L", "R")
+
+        # Extent of the cluster wall along the boundary (constraint length).
+        if vertical:
+            wcol = c - 1 if side == "L" else c + 1
+            a, b = r, r
+            while a - 1 >= 0 and occ[a - 1, wcol] > 0:
+                a -= 1
+            while b + 1 < rows and occ[b + 1, wcol] > 0:
+                b += 1
+        else:
+            wrow = r - 1 if side == "U" else r + 1
+            a, b = c, c
+            while a - 1 >= 0 and occ[wrow, a - 1] > 0:
+                a -= 1
+            while b + 1 < cols and occ[wrow, b + 1] > 0:
+                b += 1
+
+        def slides(size, cover):
+            cand = [(a + b) // 2 - size // 2, a, b + 1 - size, cover - size // 2, cover, cover - size + 1]
+            out, seen = [], set()
+            for p in cand:
+                if p in seen:
+                    continue
+                seen.add(p)
+                if p <= cover < p + size:
+                    out.append(p)
+            return out
+
+        def contact_v(r0, r1, wc_):
+            if wc_ < 0 or wc_ >= cols:
+                return 0
+            return int((occ[max(0, r0):min(rows, r1), wc_] > 0).sum())
+
+        def contact_h(c0, c1, wr_):
+            if wr_ < 0 or wr_ >= rows:
+                return 0
+            return int((occ[wr_, max(0, c0):min(cols, c1)] > 0).sum())
+
+        def try_stone(wc, hc):
+            if side == "L":
+                c0, c1 = c, c + wc
+                for r0 in slides(hc, r):
+                    if fits(r0, r0 + hc, c0, c1) and contact_v(r0, r0 + hc, c - 1) > 0:
+                        return (r0, r0 + hc, c0, c1)
+            elif side == "R":
+                c1, c0 = c + 1, c + 1 - wc
+                for r0 in slides(hc, r):
+                    if fits(r0, r0 + hc, c0, c1) and contact_v(r0, r0 + hc, c + 1) > 0:
+                        return (r0, r0 + hc, c0, c1)
+            elif side == "U":
+                r0, r1 = r, r + hc
+                for c0 in slides(wc, c):
+                    if fits(r0, r1, c0, c0 + wc) and contact_h(c0, c0 + wc, r - 1) > 0:
+                        return (r0, r1, c0, c0 + wc)
+            else:  # D
+                r1, r0 = r + 1, r + 1 - hc
+                for c0 in slides(wc, c):
+                    if fits(r0, r1, c0, c0 + wc) and contact_h(c0, c0 + wc, r + 1) > 0:
+                        return (r0, r1, c0, c0 + wc)
+            return None
+
+        def long_first(o):
+            _, _, _, wc, hc = o
+            long_along = (hc >= wc) if vertical else (wc >= hc)
+            return 0 if long_along else 1
+
+        found = []
+        scanned = 0
+        for i in order:
+            if i in used:
+                continue
+            if scanned > 150:
+                break
+            scanned += 1
+            for w, h, rot, wc, hc in sorted(ori[i], key=long_first):
+                pos = try_stone(wc, hc)
+                if pos:
+                    found.append((i, pos, w, h, rot))
+                    break
+            if len(found) >= 5:
+                break
+        if not found:
+            return None
+        i, (r0, r1, c0, c1), w, h, rot = rng.choice(found)
+        place(i, r0, r1, c0, c1, w, h, rot)
+        counts[1 if rot == 90 else 0] += 1
+        return r0, r1, c0, c1
+
     frontier: set = set()
 
     def add_frontier(r0, r1, c0, c1):
@@ -283,7 +390,7 @@ def solve_spiral(walls, negs, stones, params):
         frontier.discard((r, c))
         if mode != "beam":
             theta = ang
-        blk = place_best(r, c)
+        blk = place_flush(r, c) if mode == "beam" else place_best(r, c)
         if blk is not None:
             add_frontier(*blk)
 

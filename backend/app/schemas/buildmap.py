@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 class BuildMapCreate(BaseModel):
     name: str | None = None
     seed: int | None = None
-    method: str = "spiral"  # spiral | skyline
+    method: str = "beam"  # beam | spiral | skyline
     seeds: int = 4
     stagger_min_cm: float = 6.0
     through_stone_prob: float = 0.08

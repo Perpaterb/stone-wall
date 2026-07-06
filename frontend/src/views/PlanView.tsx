@@ -51,7 +51,7 @@ export default function PlanView() {
   const [serverCoverage, setServerCoverage] = useState<Coverage | null>(null);
   const [buildMaps, setBuildMaps] = useState<BuildMapSummary[]>([]);
   const [busy, setBusy] = useState(false);
-  const [method, setMethod] = useState("spiral");
+  const [method, setMethod] = useState("beam");
   const [seedCount, setSeedCount] = useState(1);
 
   function refreshCoverage() {
@@ -583,8 +583,8 @@ export default function PlanView() {
           <label style={{ display: "block", marginBottom: 6 }}>
             style{" "}
             <select value={method} onChange={(e) => setMethod(e.target.value)}>
-              <option value="spiral">spiral (rubble)</option>
               <option value="beam">beam (circular)</option>
+              <option value="spiral">spiral (rubble)</option>
               <option value="skyline">skyline (coursed)</option>
             </select>
           </label>
