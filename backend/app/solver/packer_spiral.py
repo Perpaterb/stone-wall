@@ -21,7 +21,7 @@ from app.solver.geometry import region_intervals_at
 
 # Bump when the algorithm changes so the UI can show which version ran.
 VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
-BEAM_VERSION = "beam-7 (per-seed round-robin, each grows around its own point)"
+BEAM_VERSION = "beam-8 (evenly-spread seeds, per-seed round-robin)"
 
 
 def _orientations(stone):
@@ -541,13 +541,30 @@ def solve_spiral(walls, negs, stones, params):
 
     # Seed stones at random valid points (multiple nucleation sites).
     seed_points: list[list[float]] = []
-    tries = 0
-    while len(seed_points) < n_seeds and tries < n_seeds * 80:
-        tries += 1
-        r = rng.randrange(rows)
-        c = rng.randrange(cols)
-        if not inside[r, c] or occ[r, c] != 0:
-            continue
+    seed_tries = 0
+    while len(seed_points) < n_seeds and seed_tries < n_seeds * 300:
+        # Best-candidate sampling: pick the valid cell farthest from the seeds
+        # placed so far, so seeds spread evenly across the wall.
+        r = c = -1
+        best_d = -1.0
+        for _ in range(30):
+            seed_tries += 1
+            rr = rng.randrange(rows)
+            cc = rng.randrange(cols)
+            if not inside[rr, cc] or occ[rr, cc] != 0:
+                continue
+            px = ox + (cc + 0.5) * cell
+            py = oy + (rr + 0.5) * cell
+            d = (
+                min((px - s[0]) ** 2 + (py - s[1]) ** 2 for s in seed_points)
+                if seed_points
+                else 1e18
+            )
+            if d > best_d:
+                best_d = d
+                r, c = rr, cc
+        if r < 0:
+            break
         if mode == "beam":
             # Beam: the seed point is the beam origin; the BIGGEST available stone
             # is placed so the seed point sits INSIDE it, off-centre (not the exact
