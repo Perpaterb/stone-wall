@@ -7,6 +7,7 @@ import {
   createBuildMap,
   cropUrl,
   cutPlacement,
+  deleteAllPlacements,
   deletePlacement,
   fitStones,
   getBuildMap,
@@ -137,6 +138,23 @@ export default function BuildMapView() {
     try {
       await deletePlacement(selPlacement.id);
       setSelPlacement(null);
+      reload();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteAll() {
+    if (!bm) return;
+    if (!window.confirm(`Delete all ${total} placed stones from this build map?`)) return;
+    setBusy(true);
+    try {
+      await deleteAllPlacements(bm.id);
+      setSelPlacement(null);
+      setRect(null);
+      setFitList(null);
       reload();
     } catch (e) {
       setError(String(e));
@@ -357,6 +375,11 @@ export default function BuildMapView() {
         >
           {manual ? "Manual: ON (drag a rectangle)" : "Manual edit"}
         </button>
+        {manual && (
+          <button onClick={deleteAll} disabled={busy || total === 0} style={{ color: "crimson" }}>
+            Delete all
+          </button>
+        )}
         <button
           onClick={() => setMarkMode((m) => !m)}
           style={{ fontWeight: markMode ? 700 : 400, background: markMode ? "#d9f2d9" : "#fff" }}

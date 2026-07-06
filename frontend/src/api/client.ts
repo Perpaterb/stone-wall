@@ -199,6 +199,12 @@ export async function deletePlacement(placementId: string): Promise<void> {
   if (!res.ok) throw new Error(`Delete failed (${res.status})`);
 }
 
+export async function deleteAllPlacements(buildMapId: string): Promise<{ deleted: number }> {
+  const res = await fetch(`${BASE}/buildmaps/${buildMapId}/placements`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete all failed (${res.status})`);
+  return res.json();
+}
+
 export async function cutPlacement(placementId: string): Promise<Stone> {
   const res = await fetch(`${BASE}/placements/${placementId}/cut`, { method: "POST" });
   if (!res.ok) {

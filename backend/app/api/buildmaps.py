@@ -324,6 +324,24 @@ def manual_place(
     )
 
 
+@router.delete("/buildmaps/{build_map_id}/placements")
+def delete_all_placements(build_map_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Clear every placement from a build map and free the stones."""
+    bm = db.get(BuildMap, build_map_id)
+    if bm is None:
+        raise HTTPException(status_code=404, detail="Build map not found")
+    placements = db.scalars(
+        select(Placement).where(Placement.build_map_id == build_map_id)
+    ).all()
+    for pl in placements:
+        stone = db.get(Stone, pl.stone_id)
+        if stone is not None and stone.status == "used":
+            stone.status = "available"
+        db.delete(pl)
+    db.commit()
+    return {"deleted": len(placements)}
+
+
 @router.delete("/placements/{placement_id}")
 def delete_placement(placement_id: uuid.UUID, db: Session = Depends(get_db)):
     pl = db.get(Placement, placement_id)
