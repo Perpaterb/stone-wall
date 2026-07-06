@@ -113,9 +113,9 @@ export default function BuildMapView() {
   async function placeSelected() {
     if (!bm || !rect || !fitList || fitList.length === 0) return;
     const s = fitList[fitI];
-    const wideRect = rect.w >= rect.h;
-    const wideStone = s.width_cm >= s.height_cm;
-    const rotation_deg = wideRect === wideStone ? 0 : 90;
+    const m0 = Math.min(Math.abs(s.width_cm - rect.w), Math.abs(s.height_cm - rect.h));
+    const m90 = Math.min(Math.abs(s.height_cm - rect.w), Math.abs(s.width_cm - rect.h));
+    const rotation_deg = m0 <= m90 ? 0 : 90;
     setBusy(true);
     try {
       await manualPlace(bm.id, {
@@ -211,13 +211,17 @@ export default function BuildMapView() {
   const effectiveVisible = Math.min(visibleCount, total);
   const shown = bm ? bm.placements.slice(0, effectiveVisible) : [];
 
-  // Outline of how the current candidate stone sits in the dragged rectangle
-  // (anchored top-left; overhang beyond the rectangle is what gets cut off).
-  let preview: { pw: number; ph: number } | null = null;
+  // Outline of how the current candidate stone sits in the dragged rectangle,
+  // rotated so the matching dimension lines up with the selection. Anchored
+  // top-left; the part beyond the rectangle is what gets cut off.
+  let preview: { pw: number; ph: number; rot: number } | null = null;
   if (manual && rect && fitList && fitList.length > 0) {
     const s = fitList[fitI];
-    const rot = (rect.w >= rect.h) === (s.width_cm >= s.height_cm) ? 0 : 90;
+    const m0 = Math.min(Math.abs(s.width_cm - rect.w), Math.abs(s.height_cm - rect.h));
+    const m90 = Math.min(Math.abs(s.height_cm - rect.w), Math.abs(s.width_cm - rect.h));
+    const rot = m0 <= m90 ? 0 : 90;
     preview = {
+      rot,
       pw: rot === 90 ? s.height_cm : s.width_cm,
       ph: rot === 90 ? s.width_cm : s.height_cm,
     };
@@ -489,6 +493,22 @@ export default function BuildMapView() {
                 stroke="#1f9d55"
                 strokeWidth={2.5 / scale}
                 fill="rgba(31,157,85,0.14)"
+                listening={false}
+              />
+            ) : null}
+            {preview && rect && preview.pw > rect.w + 0.15 ? (
+              <Line
+                points={[rect.x + rect.w, rect.y, rect.x + rect.w, rect.y + preview.ph]}
+                stroke="#e00000"
+                strokeWidth={3 / scale}
+                listening={false}
+              />
+            ) : null}
+            {preview && rect && preview.ph > rect.h + 0.15 ? (
+              <Line
+                points={[rect.x, rect.y + rect.h, rect.x + preview.pw, rect.y + rect.h]}
+                stroke="#e00000"
+                strokeWidth={3 / scale}
                 listening={false}
               />
             ) : null}

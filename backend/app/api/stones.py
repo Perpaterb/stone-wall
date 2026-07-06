@@ -103,9 +103,9 @@ def fit_stones(
     h: float,
     db: Session = Depends(get_db),
 ):
-    """Available stones whose width or height can fill the selection's width or
-    height (>= target - grout, and not wildly bigger); minimal-cut first. The
-    other dimension can be anything (it will be cut)."""
+    """Available stones one of whose dimensions matches the selection's width or
+    height within the grout margin (stones rotate, so either dim can match either
+    side). Closest match first. The other dimension is whatever (it gets cut)."""
     project = db.get(Project, project_id)
     gmax = project.grout_max_cm if project else 0.3
     stones = db.scalars(
@@ -116,10 +116,9 @@ def fit_stones(
         best = None
         for d in (s.width_cm, s.height_cm):
             for target in (w, h):
-                if d >= target - gmax and d <= target + 30:  # fills target, cuttable
-                    excess = abs(d - target)
-                    if best is None or excess < best:
-                        best = excess
+                diff = abs(d - target)
+                if diff <= gmax and (best is None or diff < best):
+                    best = diff
         if best is not None:
             scored.append((best, s))
     scored.sort(key=lambda x: x[0])
