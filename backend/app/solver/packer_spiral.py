@@ -21,7 +21,7 @@ from app.solver.geometry import region_intervals_at
 
 # Bump when the algorithm changes so the UI can show which version ran.
 VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
-BEAM_VERSION = "beam-1 (nearest-empty fill, overhang ok, 50/50 rot)"
+BEAM_VERSION = "beam-2 (biggest seed at corner, nearest-empty fill, overhang ok)"
 
 
 def _orientations(stone):
@@ -204,20 +204,35 @@ def solve_spiral(walls, negs, stones, params):
         c = rng.randrange(cols)
         if not inside[r, c] or occ[r, c] != 0:
             continue
-        avail = [i for i in range(len(stones)) if i not in used]
-        if not avail:
-            break
-        idx = rng.choice(avail)
-        w, h, rot = rng.choice(list(_orientations(stones[idx])))
-        wc = int(math.ceil(w / cell))
-        hc = int(math.ceil(h / cell))
-        r0, c0 = r - hc // 2, c - wc // 2
-        if fits(r0, r0 + hc, c0, c0 + wc):
-            place(idx, r0, r0 + hc, c0, c0 + wc, w, h, rot)
-            add_frontier(r0, r0 + hc, c0, c0 + wc)
-            cx = ox + (c0 + wc / 2) * cell
-            cy = oy + (r0 + hc / 2) * cell
-            seed_points.append([round(cx, 1), round(cy, 1)])
+        if mode == "beam":
+            # Beam: the seed point is the beam origin; the BIGGEST available stone
+            # is placed with that point at its top-left corner (not centred), so
+            # the first stone sits under/beside the seed point.
+            idx = next((i for i in order if i not in used), None)
+            if idx is None:
+                break
+            w, h, rot, wc, hc = ori[idx][0]
+            if fits(r, r + hc, c, c + wc):
+                place(idx, r, r + hc, c, c + wc, w, h, rot)
+                add_frontier(r, r + hc, c, c + wc)
+                seed_points.append(
+                    [round(ox + (c + 0.5) * cell, 1), round(oy + (r + 0.5) * cell, 1)]
+                )
+        else:
+            avail = [i for i in range(len(stones)) if i not in used]
+            if not avail:
+                break
+            idx = rng.choice(avail)
+            w, h, rot = rng.choice(list(_orientations(stones[idx])))
+            wc = int(math.ceil(w / cell))
+            hc = int(math.ceil(h / cell))
+            r0, c0 = r - hc // 2, c - wc // 2
+            if fits(r0, r0 + hc, c0, c0 + wc):
+                place(idx, r0, r0 + hc, c0, c0 + wc, w, h, rot)
+                add_frontier(r0, r0 + hc, c0, c0 + wc)
+                cx = ox + (c0 + wc / 2) * cell
+                cy = oy + (r0 + hc / 2) * cell
+                seed_points.append([round(cx, 1), round(cy, 1)])
 
     # Grow in a CLOCKWISE SPIRAL around the seed(s). Each step picks the frontier
     # cell that is the next one clockwise from the current sweep angle (inner
