@@ -19,6 +19,11 @@ import {
 } from "../api/client";
 
 function placedPoly(p: Placement): number[] {
+  // A cut stone's footprint is its placed rectangle (rotation already baked into
+  // w_cm/h_cm); the whole-stone polygon no longer applies once it is cut.
+  if (p.cut) {
+    return [p.x_cm, p.y_cm, p.x_cm + p.w_cm, p.y_cm, p.x_cm + p.w_cm, p.y_cm + p.h_cm, p.x_cm, p.y_cm + p.h_cm];
+  }
   const src =
     p.polygon && p.polygon.length >= 3
       ? p.polygon
