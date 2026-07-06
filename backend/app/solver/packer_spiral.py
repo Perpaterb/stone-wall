@@ -20,6 +20,9 @@ import numpy as np
 
 from app.solver.geometry import region_intervals_at
 
+# Bump when the spiral algorithm changes so the UI can show which version ran.
+VERSION = "spiral-4 (frontier BFS, edge-cut, 50/50 rot)"
+
 
 def _orientations(stone):
     w = stone["width_cm"]

@@ -16,6 +16,8 @@ import random
 
 from app.solver.geometry import column_intervals
 
+VERSION = "skyline-3"
+
 _MIN_SIDE = 8.0
 _EPS = 1e-6
 

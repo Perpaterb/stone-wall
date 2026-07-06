@@ -44,6 +44,7 @@ export default function BuildMapView() {
   const [busy, setBusy] = useState(false);
   const [showWall, setShowWall] = useState(true);
   const [showSeeds, setShowSeeds] = useState(false);
+  const [showOrder, setShowOrder] = useState(false);
   const [visibleCount, setVisibleCount] = useState(100000);
   const [planFallback, setPlanFallback] = useState<{ walls: number[][][]; negs: number[][][] }>({ walls: [], negs: [] });
 
@@ -221,12 +222,18 @@ export default function BuildMapView() {
         {bm && <Link to={`/projects/${bm.project_id}/plan`}>Plan</Link>}
         <strong>{bm?.name ?? "Build map"}</strong>
         {bm && <span style={{ color: "#888" }}>seed {bm.seed}</span>}
+        {bm?.params?.solver_version ? (
+          <span style={{ color: "#2b6cb0", fontWeight: 700 }}>{String(bm.params.solver_version)}</span>
+        ) : null}
         <span style={{ flex: 1 }} />
         <button onClick={() => setShowWall((v) => !v)} style={{ fontWeight: showWall ? 700 : 400, background: showWall ? "#eef" : "#fff" }}>
           Wall
         </button>
         <button onClick={() => setShowSeeds((v) => !v)} style={{ fontWeight: showSeeds ? 700 : 400, background: showSeeds ? "#fde8e8" : "#fff" }}>
           Seeds
+        </button>
+        <button onClick={() => setShowOrder((v) => !v)} style={{ fontWeight: showOrder ? 700 : 400, background: showOrder ? "#eaf6ea" : "#fff" }}>
+          Order
         </button>
         <button
           onClick={() => setMarkMode((m) => !m)}
@@ -323,6 +330,24 @@ export default function BuildMapView() {
                   listening={false}
                 />
               ))}
+            {showOrder &&
+              shown.map((p, idx) => {
+                const fs = Math.min(p.w_cm, p.h_cm) * 0.26;
+                return (
+                  <Text
+                    key={`o${p.stone_id}`}
+                    x={p.x_cm}
+                    y={p.y_cm + p.h_cm - fs * 1.2}
+                    width={p.w_cm - fs * 0.3}
+                    align="right"
+                    text={String(idx + 1)}
+                    fontSize={fs}
+                    fontStyle="bold"
+                    fill="#1f6f43"
+                    listening={false}
+                  />
+                );
+              })}
           </Layer>
           {showSeeds && (
             <Layer listening={false}>

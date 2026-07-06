@@ -15,7 +15,9 @@ from app.schemas.buildmap import (
     MarkUsedIn,
     PlacementOut,
 )
+from app.solver.packer import VERSION as SKYLINE_VERSION
 from app.solver.packer import solve
+from app.solver.packer_spiral import VERSION as SPIRAL_VERSION
 from app.solver.packer_spiral import solve_spiral
 
 router = APIRouter(tags=["buildmaps"])
@@ -70,8 +72,10 @@ def create_buildmap(
     seed_points: list = []
     if method == "spiral":
         placements, report, seed_points = solve_spiral(walls, negs, stones, params)
+        params["solver_version"] = SPIRAL_VERSION
     else:
         placements, report = solve(walls, negs, stones, params)
+        params["solver_version"] = SKYLINE_VERSION
     # Snapshot the wall shapes + seed points into the build map so its view can
     # draw them even if the plan changes later.
     params["walls"] = walls
