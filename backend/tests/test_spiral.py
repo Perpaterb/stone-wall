@@ -30,7 +30,7 @@ def _no_overlap(placements):
 def test_spiral_fills_without_overlap():
     walls = [[[0, 0], [200, 0], [200, 150], [0, 150]]]
     placements, report, _ = solve_spiral(
-        walls, [], _stones(400, 1), {"seed": 3, "cell_cm": 0.5, "seeds": 3}
+        walls, [], _stones(400, 1), {"seed": 3, "cell_cm": 0.5, "seeds": 3, "allow_edge_cut": False}
     )
     assert report["stones_used"] > 10
     assert report["coverage_pct"] > 60
@@ -44,7 +44,7 @@ def test_spiral_respects_negative():
     walls = [[[0, 0], [200, 0], [200, 150], [0, 150]]]
     negs = [[[80, 60], [120, 60], [120, 90], [80, 90]]]
     placements, _, _ = solve_spiral(
-        walls, negs, _stones(400, 2), {"seed": 5, "cell_cm": 0.5, "seeds": 3}
+        walls, negs, _stones(400, 2), {"seed": 5, "cell_cm": 0.5, "seeds": 3, "allow_edge_cut": False}
     )
     assert _no_overlap(placements)
     for p in placements:

@@ -54,3 +54,20 @@ class BuildMapDetail(BaseModel):
 class MarkUsedIn(BaseModel):
     used: bool
     marked_by: str | None = None
+
+
+class ManualPlacement(BaseModel):
+    code: str
+    x_cm: float
+    y_cm: float
+    w_cm: float
+    h_cm: float
+    rotation_deg: float = 0.0
+    cut: dict | None = None
+
+
+class ManualBuildMapIn(BaseModel):
+    name: str = "Claude's attempt"
+    walls: list[list[list[float]]]
+    negatives: list[list[list[float]]] = []
+    placements: list[ManualPlacement]

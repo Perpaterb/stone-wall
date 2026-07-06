@@ -11,6 +11,7 @@ from app.schemas.buildmap import (
     BuildMapCreate,
     BuildMapDetail,
     BuildMapSummary,
+    ManualBuildMapIn,
     MarkUsedIn,
     PlacementOut,
 )
@@ -102,6 +103,82 @@ def create_buildmap(
                 cut=p["cut"],
             )
         )
+    db.commit()
+    db.refresh(bm)
+    return bm
+
+
+@router.post("/projects/{project_id}/buildmaps/manual", response_model=BuildMapSummary)
+def create_manual_buildmap(
+    project_id: uuid.UUID, payload: ManualBuildMapIn, db: Session = Depends(get_db)
+):
+    """Create a build map from an explicit, hand-authored placement list."""
+    from app.geometry import polygon_area_cm2
+
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    by_code = {
+        s.code: s
+        for s in db.scalars(select(Stone).where(Stone.project_id == project_id)).all()
+    }
+    net = max(
+        0.0,
+        sum(polygon_area_cm2(w) for w in payload.walls)
+        - sum(polygon_area_cm2(n) for n in payload.negatives),
+    )
+    placed = sum(p.w_cm * p.h_cm for p in payload.placements)
+    report = {
+        "coverage_pct": round(100.0 * placed / net, 1) if net > 0 else 0.0,
+        "stones_used": len(payload.placements),
+        "stones_available": len(by_code),
+        "courses": 0,
+        "cut_count": sum(1 for p in payload.placements if p.cut),
+        "cut_total_cm": 0.0,
+        "gap_count": 0,
+        "gap_total_cm": 0.0,
+        "joint_min_cm": 0.0,
+        "joint_max_cm": 0.0,
+        "joint_mean_cm": 0.0,
+    }
+    bm = BuildMap(
+        project_id=project_id,
+        name=payload.name,
+        seed=0,
+        params={
+            "method": "claude",
+            "walls": payload.walls,
+            "negatives": payload.negatives,
+            "seed_points": [],
+        },
+        share_key=secrets.token_urlsafe(8),
+        report=report,
+    )
+    db.add(bm)
+    db.flush()
+    skipped = 0
+    seq = 0
+    for p in payload.placements:
+        stone = by_code.get(p.code)
+        if stone is None:
+            skipped += 1
+            continue
+        db.add(
+            Placement(
+                build_map_id=bm.id,
+                stone_id=stone.id,
+                x_cm=p.x_cm,
+                y_cm=p.y_cm,
+                w_cm=p.w_cm,
+                h_cm=p.h_cm,
+                rotation_deg=p.rotation_deg,
+                course_index=0,
+                seq=seq,
+                cut=p.cut,
+            )
+        )
+        seq += 1
     db.commit()
     db.refresh(bm)
     return bm

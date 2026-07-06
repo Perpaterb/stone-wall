@@ -43,15 +43,23 @@ def solve_spiral(walls, negs, stones, params):
     min_y = min(p[1] for p in pts)
     max_y = max(p[1] for p in pts)
 
-    cols = max(1, int(math.ceil((max_x - min_x) / cell)))
-    rows = max(1, int(math.ceil((max_y - min_y) / cell)))
+    # A stone may overhang the wall edge and get cut, as long as at least
+    # min_inside of it stays inside. Pad the grid so overhang has room.
+    allow_edge = params.get("allow_edge_cut", True)
+    min_inside = params.get("min_inside_frac", 0.5)
+    pad = 22.0 if allow_edge else 0.0
+    ox = min_x - pad
+    oy = min_y - pad
+
+    cols = max(1, int(math.ceil((max_x + pad - ox) / cell)))
+    rows = max(1, int(math.ceil((max_y + pad - oy) / cell)))
 
     inside = np.zeros((rows, cols), dtype=bool)
     for r in range(rows):
-        y = min_y + (r + 0.5) * cell
+        y = oy + (r + 0.5) * cell
         for x0, x1 in region_intervals_at(y, walls, negs):
-            c0 = max(0, int(math.floor((x0 - min_x) / cell)))
-            c1 = min(cols, int(math.ceil((x1 - min_x) / cell)))
+            c0 = max(0, int(math.floor((x0 - ox) / cell)))
+            c1 = min(cols, int(math.ceil((x1 - ox) / cell)))
             if c1 > c0:
                 inside[r, c0:c1] = True
 
@@ -72,18 +80,26 @@ def solve_spiral(walls, negs, stones, params):
     def fits(r0, r1, c0, c1):
         if r0 < 0 or c0 < 0 or r1 > rows or c1 > cols:
             return False
-        if not inside[r0:r1, c0:c1].all():
+        if not (occ[r0:r1, c0:c1] == 0).all():
             return False
-        # Footprint must be free. Stones sit flush (grout 0-3mm is a hairline);
-        # a separation border would forbid ever attaching to the cluster.
-        return bool((occ[r0:r1, c0:c1] == 0).all())
+        ins = inside[r0:r1, c0:c1]
+        if allow_edge:
+            # Enough of the footprint inside the wall; the rest is a cut edge.
+            return bool(ins.mean() >= min_inside)
+        return bool(ins.all())
 
     def place(idx, r0, r1, c0, c1, w, h, rot):
         occ[r0:r1, c0:c1] = idx + 1
         used.add(idx)
-        x = min_x + c0 * cell
-        y = min_y + r0 * cell
+        x = ox + c0 * cell
+        y = oy + r0 * cell
         course = int((max_y - (y + h)) / 12)
+        frac_in = float(inside[r0:r1, c0:c1].mean())
+        cut = (
+            None
+            if frac_in > 0.995
+            else {"needed": True, "reason": "wall edge", "inside_frac": round(frac_in, 2)}
+        )
         placements.append(
             {
                 "stone_id": stones[idx]["id"],
@@ -94,7 +110,7 @@ def solve_spiral(walls, negs, stones, params):
                 "h_cm": round(h, 2),
                 "rotation_deg": rot,
                 "course_index": course,
-                "cut": None,
+                "cut": cut,
             }
         )
 
@@ -192,8 +208,8 @@ def solve_spiral(walls, negs, stones, params):
         if fits(r0, r0 + hc, c0, c0 + wc):
             place(idx, r0, r0 + hc, c0, c0 + wc, w, h, rot)
             enqueue_border(r0, r0 + hc, c0, c0 + wc)
-            cx = min_x + (c0 + wc / 2) * cell
-            cy = min_y + (r0 + hc / 2) * cell
+            cx = ox + (c0 + wc / 2) * cell
+            cy = oy + (r0 + hc / 2) * cell
             seed_points.append([round(cx, 1), round(cy, 1)])
 
     # Grow outward: each frontier cell (free, touching packed stone) is tried
@@ -240,7 +256,11 @@ def _net_wall_area(walls, negs):
 
 
 def _build_report(placements, stones, walls, negs, free_area):
-    placed_area = sum(p["w_cm"] * p["h_cm"] for p in placements)
+    # For cut stones only the inside portion counts toward coverage.
+    placed_area = sum(
+        p["w_cm"] * p["h_cm"] * (p["cut"].get("inside_frac", 1.0) if p.get("cut") else 1.0)
+        for p in placements
+    )
     net = _net_wall_area(walls, negs)
     rows = len({p["course_index"] for p in placements})
     return {
