@@ -104,6 +104,7 @@ export interface BuildMapSummary {
 }
 
 export interface Placement {
+  id: string;
   stone_id: string;
   code: string;
   x_cm: number;
@@ -168,6 +169,42 @@ export async function listBuildMaps(projectId: string): Promise<BuildMapSummary[
 export async function getBuildMap(id: string): Promise<BuildMapDetail> {
   const res = await fetch(`${BASE}/buildmaps/${id}`);
   if (!res.ok) throw new Error(`Failed to load build map (${res.status})`);
+  return res.json();
+}
+
+export async function fitStones(projectId: string, w: number, h: number): Promise<Stone[]> {
+  const res = await fetch(`${BASE}/projects/${projectId}/stones/fit?w=${w}&h=${h}`);
+  if (!res.ok) throw new Error(`Fit query failed (${res.status})`);
+  return res.json();
+}
+
+export async function manualPlace(
+  buildMapId: string,
+  body: { stone_code: string; x_cm: number; y_cm: number; w_cm: number; h_cm: number; rotation_deg: number }
+): Promise<Placement> {
+  const res = await fetch(`${BASE}/buildmaps/${buildMapId}/placements`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => null);
+    throw new Error(d?.detail ?? `Place failed (${res.status})`);
+  }
+  return res.json();
+}
+
+export async function deletePlacement(placementId: string): Promise<void> {
+  const res = await fetch(`${BASE}/placements/${placementId}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(`Delete failed (${res.status})`);
+}
+
+export async function cutPlacement(placementId: string): Promise<Stone> {
+  const res = await fetch(`${BASE}/placements/${placementId}/cut`, { method: "POST" });
+  if (!res.ok) {
+    const d = await res.json().catch(() => null);
+    throw new Error(d?.detail ?? `Cut failed (${res.status})`);
+  }
   return res.json();
 }
 

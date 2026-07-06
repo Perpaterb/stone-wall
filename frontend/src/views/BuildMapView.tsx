@@ -1,16 +1,21 @@
 import Konva from "konva";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Circle, Layer, Line, Stage, Text } from "react-konva";
+import { Circle, Layer, Line, Rect, Stage, Text } from "react-konva";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 import {
   createBuildMap,
   cropUrl,
+  cutPlacement,
+  deletePlacement,
+  fitStones,
   getBuildMap,
   getPlan,
+  manualPlace,
   markUsed,
   type BuildMapDetail,
   type Placement,
+  type Stone,
 } from "../api/client";
 
 function placedPoly(p: Placement): number[] {
@@ -46,6 +51,114 @@ export default function BuildMapView() {
   const [showSeeds, setShowSeeds] = useState(false);
   const [showOrder, setShowOrder] = useState(false);
   const [visibleCount, setVisibleCount] = useState(100000);
+  const [manual, setManual] = useState(false);
+  const [showCuts, setShowCuts] = useState(false);
+  const [selPlacement, setSelPlacement] = useState<Placement | null>(null);
+  const [dragStart, setDragStart] = useState<number[] | null>(null);
+  const [dragCur, setDragCur] = useState<number[] | null>(null);
+  const [rect, setRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [fitList, setFitList] = useState<Stone[] | null>(null);
+  const [fitI, setFitI] = useState(0);
+
+  function reload() {
+    if (buildMapId) getBuildMap(buildMapId).then(setBm).catch(() => {});
+  }
+
+  function toWorld(px: number, py: number): number[] {
+    return [(px - pos.x) / scale, (py - pos.y) / scale];
+  }
+
+  function onDown() {
+    if (!manual) return;
+    const ptr = stageRef.current?.getPointerPosition();
+    if (!ptr) return;
+    setSelPlacement(null);
+    setFitList(null);
+    setDragStart(toWorld(ptr.x, ptr.y));
+    setDragCur(toWorld(ptr.x, ptr.y));
+  }
+  function onMove() {
+    if (!manual || !dragStart) return;
+    const ptr = stageRef.current?.getPointerPosition();
+    if (ptr) setDragCur(toWorld(ptr.x, ptr.y));
+  }
+  async function onUp() {
+    if (!manual || !dragStart || !dragCur || !bm) return;
+    const [x0, y0] = dragStart;
+    const [x1, y1] = dragCur;
+    const w = Math.abs(x1 - x0);
+    const h = Math.abs(y1 - y0);
+    const rx = Math.min(x0, x1);
+    const ry = Math.min(y0, y1);
+    setDragStart(null);
+    if (w > 4 && h > 4) {
+      setRect({ x: rx, y: ry, w: Math.round(w * 10) / 10, h: Math.round(h * 10) / 10 });
+      try {
+        const list = await fitStones(bm.project_id, Math.round(w * 10) / 10, Math.round(h * 10) / 10);
+        setFitList(list);
+        setFitI(0);
+      } catch (e) {
+        setError(String(e));
+      }
+    } else {
+      // treat as a click: select the placement under the point
+      const hit = bm.placements.find(
+        (p) => rx >= p.x_cm && rx <= p.x_cm + p.w_cm && ry >= p.y_cm && ry <= p.y_cm + p.h_cm
+      );
+      setSelPlacement(hit ?? null);
+      setRect(null);
+    }
+  }
+
+  async function placeSelected() {
+    if (!bm || !rect || !fitList || fitList.length === 0) return;
+    const s = fitList[fitI];
+    const wideRect = rect.w >= rect.h;
+    const wideStone = s.width_cm >= s.height_cm;
+    const rotation_deg = wideRect === wideStone ? 0 : 90;
+    setBusy(true);
+    try {
+      await manualPlace(bm.id, {
+        stone_code: s.code, x_cm: rect.x, y_cm: rect.y, w_cm: rect.w, h_cm: rect.h, rotation_deg,
+      });
+      setRect(null);
+      setFitList(null);
+      reload();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function delSelected() {
+    if (!selPlacement) return;
+    setBusy(true);
+    try {
+      await deletePlacement(selPlacement.id);
+      setSelPlacement(null);
+      reload();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function cutSelected() {
+    if (!selPlacement) return;
+    setBusy(true);
+    try {
+      const offcut = await cutPlacement(selPlacement.id);
+      setError(`Cut done. Offcut ${offcut.code} (${offcut.width_cm}x${offcut.height_cm}cm) added to the catalogue.`);
+      setSelPlacement(null);
+      reload();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
   const [planFallback, setPlanFallback] = useState<{ walls: number[][][]; negs: number[][][] }>({ walls: [], negs: [] });
 
   useEffect(() => {
@@ -235,6 +348,15 @@ export default function BuildMapView() {
         <button onClick={() => setShowOrder((v) => !v)} style={{ fontWeight: showOrder ? 700 : 400, background: showOrder ? "#eaf6ea" : "#fff" }}>
           Order
         </button>
+        <button onClick={() => setShowCuts((v) => !v)} style={{ fontWeight: showCuts ? 700 : 400, background: showCuts ? "#fdeede" : "#fff" }}>
+          Cuts
+        </button>
+        <button
+          onClick={() => { setManual((v) => !v); setSelPlacement(null); setRect(null); setFitList(null); }}
+          style={{ fontWeight: manual ? 700 : 400, background: manual ? "#e6efff" : "#fff" }}
+        >
+          {manual ? "Manual: ON (drag a rectangle)" : "Manual edit"}
+        </button>
         <button
           onClick={() => setMarkMode((m) => !m)}
           style={{ fontWeight: markMode ? 700 : 400, background: markMode ? "#d9f2d9" : "#fff" }}
@@ -274,8 +396,14 @@ export default function BuildMapView() {
           scaleY={scale}
           x={pos.x}
           y={pos.y}
-          draggable
+          draggable={!manual}
           onWheel={handleWheel}
+          onMouseDown={onDown}
+          onMouseMove={onMove}
+          onMouseUp={onUp}
+          onTouchStart={onDown}
+          onTouchMove={onMove}
+          onTouchEnd={onUp}
           onDragEnd={(e) => {
             if (e.target === e.target.getStage()) setPos({ x: e.target.x(), y: e.target.y() });
           }}
@@ -293,29 +421,53 @@ export default function BuildMapView() {
           <Layer>
             {shown.map((p, idx) => {
               const isCurrent = idx === shown.length - 1 && effectiveVisible < total;
+              const isSel = selPlacement?.id === p.id || p.stone_id === selectedStone;
+              const cut = p.cut as Record<string, unknown> | null;
+              const cutDone = !!(cut && cut.done);
+              const cutPlanned = !!(cut && cut.planned);
+              let stroke = "#8a7a52";
+              if (isSel) stroke = "#1e40ff";
+              else if (isCurrent) stroke = "#e5a000";
+              else if (showCuts && cutDone) stroke = "#c0392b";
+              else if (showCuts && cutPlanned) stroke = "#e58e00";
+              else if (p.cut) stroke = "#c0392b";
               return (
                 <Line
                   key={p.stone_id}
                   points={placedPoly(p)}
                   closed
-                  fill={fillFor(p)}
-                  opacity={p.status === "used" ? 0.55 : 1}
-                  stroke={
-                    isCurrent
-                      ? "#e5a000"
-                      : p.stone_id === selectedStone
-                        ? "#2b6cb0"
-                        : p.cut
-                          ? "#c0392b"
-                          : "#8a7a52"
-                  }
-                  strokeWidth={(isCurrent ? 3.5 : p.stone_id === selectedStone ? 2.4 : p.cut ? 1.6 : 0.8) / scale}
+                  fill={showCuts && cutPlanned ? "#f6e3c8" : showCuts && cutDone ? "#f0cbbf" : fillFor(p)}
+                  opacity={p.status === "used" ? 0.6 : 1}
+                  stroke={stroke}
+                  strokeWidth={(isSel || isCurrent ? 3.5 : p.cut ? 1.8 : 0.8) / scale}
+                  dash={showCuts && cutPlanned ? [5 / scale, 3 / scale] : undefined}
                   hitStrokeWidth={6 / scale}
-                  onClick={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
-                  onTap={() => (markMode ? toggleUsed(p) : setSelectedStone(p.stone_id))}
+                  onClick={() => {
+                    if (manual) return;
+                    if (markMode) toggleUsed(p);
+                    else setSelectedStone(p.stone_id);
+                  }}
+                  onTap={() => {
+                    if (manual) return;
+                    if (markMode) toggleUsed(p);
+                    else setSelectedStone(p.stone_id);
+                  }}
                 />
               );
             })}
+            {(dragStart && dragCur) || rect ? (
+              <Rect
+                x={rect ? rect.x : Math.min(dragStart![0], dragCur![0])}
+                y={rect ? rect.y : Math.min(dragStart![1], dragCur![1])}
+                width={rect ? rect.w : Math.abs(dragCur![0] - dragStart![0])}
+                height={rect ? rect.h : Math.abs(dragCur![1] - dragStart![1])}
+                stroke="#1e40ff"
+                strokeWidth={2 / scale}
+                dash={[6 / scale, 4 / scale]}
+                fill="rgba(30,64,255,0.08)"
+                listening={false}
+              />
+            ) : null}
             {showLabels &&
               shown.map((p) => (
                 <Text
@@ -379,6 +531,54 @@ export default function BuildMapView() {
             <div>Courses: {r.courses}</div>
             <div>Cuts: {r.cut_count} ({r.cut_total_cm} cm)</div>
             <div>Gaps: {r.gap_count} ({r.gap_total_cm} cm)</div>
+          </div>
+        )}
+
+        {manual && fitList && rect && (
+          <div style={{ position: "absolute", left: 12, top: 12, background: "rgba(255,255,255,0.97)", border: "1px solid #1e40ff", borderRadius: 8, padding: "10px 12px", fontSize: 13, width: 240 }}>
+            <div style={{ fontWeight: 700 }}>Rectangle {rect.w} x {rect.h} cm</div>
+            <div style={{ margin: "4px 0" }}>{fitList.length} stones fit</div>
+            {fitList.length > 0 ? (
+              <>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <button onClick={() => setFitI((i) => (i - 1 + fitList.length) % fitList.length)}>&larr;</button>
+                  <div style={{ flex: 1, textAlign: "center" }}>
+                    {fitI + 1} / {fitList.length}
+                  </div>
+                  <button onClick={() => setFitI((i) => (i + 1) % fitList.length)}>&rarr;</button>
+                </div>
+                <div style={{ margin: "6px 0", textAlign: "center" }}>
+                  <strong>{fitList[fitI].code}</strong> {fitList[fitI].width_cm} x {fitList[fitI].height_cm} cm
+                  {cropUrl(fitList[fitI]) && (
+                    <img src={cropUrl(fitList[fitI])!} alt="" style={{ display: "block", width: "100%", maxHeight: 90, objectFit: "contain", background: "#faf8f2", marginTop: 4 }} />
+                  )}
+                </div>
+                <button style={{ width: "100%", fontWeight: 700 }} disabled={busy} onClick={placeSelected}>Place this stone</button>
+              </>
+            ) : (
+              <div style={{ color: "#888" }}>No stone fits, drag a different size.</div>
+            )}
+            <button style={{ width: "100%", marginTop: 6 }} onClick={() => { setRect(null); setFitList(null); }}>Cancel</button>
+          </div>
+        )}
+
+        {manual && selPlacement && (
+          <div style={{ position: "absolute", left: 12, top: 12, background: "rgba(255,255,255,0.97)", border: "1px solid #1e40ff", borderRadius: 8, padding: "10px 12px", fontSize: 13, width: 240 }}>
+            <div style={{ fontWeight: 700 }}>{selPlacement.code}</div>
+            <div>{selPlacement.w_cm} x {selPlacement.h_cm} cm placed</div>
+            {selPlacement.cut && (selPlacement.cut as Record<string, unknown>).planned ? (
+              <div style={{ color: "#b45309" }}>needs cutting to size</div>
+            ) : null}
+            {selPlacement.cut && (selPlacement.cut as Record<string, unknown>).done ? (
+              <div style={{ color: "#c0392b" }}>cut done</div>
+            ) : null}
+            <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+              <button disabled={busy} onClick={delSelected} style={{ color: "crimson" }}>Delete</button>
+              {selPlacement.cut && (selPlacement.cut as Record<string, unknown>).planned ? (
+                <button disabled={busy} onClick={cutSelected} style={{ fontWeight: 700 }}>Cut in real world</button>
+              ) : null}
+              <button onClick={() => setSelPlacement(null)}>Close</button>
+            </div>
           </div>
         )}
 
