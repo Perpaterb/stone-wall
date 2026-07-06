@@ -17,6 +17,7 @@ from app.schemas.buildmap import (
 )
 from app.solver.packer import VERSION as SKYLINE_VERSION
 from app.solver.packer import solve
+from app.solver.packer_spiral import BEAM_VERSION
 from app.solver.packer_spiral import VERSION as SPIRAL_VERSION
 from app.solver.packer_spiral import solve_spiral
 
@@ -70,9 +71,10 @@ def create_buildmap(
         "through_stone_prob": payload.through_stone_prob,
     }
     seed_points: list = []
-    if method == "spiral":
+    if method in ("spiral", "beam"):
+        params["mode"] = "beam" if method == "beam" else "spiral"
         placements, report, seed_points = solve_spiral(walls, negs, stones, params)
-        params["solver_version"] = SPIRAL_VERSION
+        params["solver_version"] = BEAM_VERSION if method == "beam" else SPIRAL_VERSION
     else:
         placements, report = solve(walls, negs, stones, params)
         params["solver_version"] = SKYLINE_VERSION

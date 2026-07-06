@@ -19,8 +19,9 @@ import numpy as np
 
 from app.solver.geometry import region_intervals_at
 
-# Bump when the spiral algorithm changes so the UI can show which version ran.
+# Bump when the algorithm changes so the UI can show which version ran.
 VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
+BEAM_VERSION = "beam-1 (nearest-empty fill, overhang ok, 50/50 rot)"
 
 
 def _orientations(stone):
@@ -47,9 +48,17 @@ def solve_spiral(walls, negs, stones, params):
 
     # A stone may overhang the wall edge and get cut, as long as at least
     # min_inside of it stays inside. Pad the grid so overhang has room.
+    # mode: "spiral" = clockwise angular sweep; "beam" = fill nearest empty spot.
+    mode = params.get("mode", "spiral")
     allow_edge = params.get("allow_edge_cut", True)
-    min_inside = params.get("min_inside_frac", 0.5)
-    pad = 22.0 if allow_edge else 0.0
+    if mode == "beam":
+        # Beam mode does not restrict overhang at all.
+        allow_edge = True
+        min_inside = params.get("min_inside_frac", 0.0)
+        pad = 42.0
+    else:
+        min_inside = params.get("min_inside_frac", 0.5)
+        pad = 22.0 if allow_edge else 0.0
     ox = min_x - pad
     oy = min_y - pad
 
@@ -236,8 +245,14 @@ def solve_spiral(walls, negs, stones, params):
                 continue
             x = ox + (c + 0.5) * cell
             y = oy + (r + 0.5) * cell
-            ang = math.atan2(y - sy, x - sx)
-            key = ((ang - theta) % two_pi, math.hypot(x - sx, y - sy))
+            dist = math.hypot(x - sx, y - sy)
+            if mode == "beam":
+                # Beam sweep: fill the closest empty spot to the seed. Ties -> any.
+                key = (dist, 0.0)
+                ang = 0.0
+            else:
+                ang = math.atan2(y - sy, x - sx)
+                key = ((ang - theta) % two_pi, dist)
             if best_key is None or key < best_key:
                 best_key = key
                 best = (r, c, ang)
@@ -247,7 +262,8 @@ def solve_spiral(walls, negs, stones, params):
             break
         r, c, ang = best
         frontier.discard((r, c))
-        theta = ang
+        if mode != "beam":
+            theta = ang
         blk = place_best(r, c)
         if blk is not None:
             add_frontier(*blk)

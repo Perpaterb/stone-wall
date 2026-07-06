@@ -584,10 +584,11 @@ export default function PlanView() {
             style{" "}
             <select value={method} onChange={(e) => setMethod(e.target.value)}>
               <option value="spiral">spiral (rubble)</option>
+              <option value="beam">beam (circular)</option>
               <option value="skyline">skyline (coursed)</option>
             </select>
           </label>
-          {method === "spiral" && (
+          {(method === "spiral" || method === "beam") && (
             <label style={{ display: "block", marginBottom: 6 }}>
               seeds{" "}
               <input type="number" min={1} max={12} value={seedCount} style={{ width: 50 }}
