@@ -484,6 +484,12 @@ export default function PlanView() {
                     stroke="#2b6cb0"
                     strokeWidth={2 / scale}
                     draggable
+                    dragBoundFunc={(abs) => {
+                      // snap the handle to the 1cm (10mm) grid while dragging
+                      const wx = Math.round((abs.x - pos.x) / scale);
+                      const wy = Math.round((abs.y - pos.y) / scale);
+                      return { x: pos.x + wx * scale, y: pos.y + wy * scale };
+                    }}
                     onMouseDown={() => setSelectedId(s.id)}
                     onTouchStart={() => setSelectedId(s.id)}
                     onDragStart={() => setSelectedId(s.id)}
