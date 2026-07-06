@@ -21,7 +21,7 @@ from app.solver.geometry import region_intervals_at
 
 # Bump when the algorithm changes so the UI can show which version ran.
 VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
-BEAM_VERSION = "beam-4 (flush-to-wall, long side along constraint, nearest-empty)"
+BEAM_VERSION = "beam-5 (flush, no <5cm slivers, nearest-empty)"
 
 
 def _orientations(stone):
@@ -290,6 +290,116 @@ def solve_spiral(walls, negs, stones, params):
         counts[1 if rot == 90 else 0] += 1
         return r0, r1, c0, c1
 
+    min_gap = max(1, int(round(5.0 / cell)))  # 5 cm = smallest fillable gap
+
+    def no_sliver(r0, r1, c0, c1):
+        """True unless placing [r0:r1,c0:c1] leaves a 0<gap<5cm sliver to an
+        existing stone on any side. A side is fine if the immediately adjacent
+        cell is occupied (flush) or nothing sits within 5cm (open); a sliver is
+        an empty adjacent cell with an occupied cell just beyond it."""
+        # left
+        if c0 - 1 >= 0 and c0 - 1 > max(0, c0 - min_gap):
+            adj = occ[r0:r1, c0 - 1] == 0
+            zone = occ[r0:r1, max(0, c0 - min_gap):c0 - 1] > 0
+            if zone.size and bool((adj & zone.any(axis=1)).any()):
+                return False
+        # right
+        if c1 < cols and min(cols, c1 + min_gap) > c1 + 1:
+            adj = occ[r0:r1, c1] == 0
+            zone = occ[r0:r1, c1 + 1:min(cols, c1 + min_gap)] > 0
+            if zone.size and bool((adj & zone.any(axis=1)).any()):
+                return False
+        # up
+        if r0 - 1 >= 0 and r0 - 1 > max(0, r0 - min_gap):
+            adj = occ[r0 - 1, c0:c1] == 0
+            zone = occ[max(0, r0 - min_gap):r0 - 1, c0:c1] > 0
+            if zone.size and bool((adj & zone.any(axis=0)).any()):
+                return False
+        # down
+        if r1 < rows and min(rows, r1 + min_gap) > r1 + 1:
+            adj = occ[r1, c0:c1] == 0
+            zone = occ[r1 + 1:min(rows, r1 + min_gap), c0:c1] > 0
+            if zone.size and bool((adj & zone.any(axis=0)).any()):
+                return False
+        return True
+
+    def place_beam5(r, c):
+        """Flush placement that also refuses to leave a <5cm sliver. Slides the
+        stone along the wall to a position whose end gaps are 0 or >=5cm, and
+        rejects any placement that would sit a sliver away from another stone."""
+        occL = c > 0 and occ[r, c - 1] > 0
+        occR = c + 1 < cols and occ[r, c + 1] > 0
+        occU = r > 0 and occ[r - 1, c] > 0
+        occD = r + 1 < rows and occ[r + 1, c] > 0
+        if not (occL or occR or occU or occD):
+            return None
+
+        vr0 = vr1 = hcc0 = hcc1 = None
+        if occL or occR:
+            a = b = r
+            while a - 1 >= 0 and occ[a - 1, c] == 0:
+                a -= 1
+            while b + 1 < rows and occ[b + 1, c] == 0:
+                b += 1
+            vr0, vr1 = a, b
+        if occU or occD:
+            a = b = c
+            while a - 1 >= 0 and occ[r, a - 1] == 0:
+                a -= 1
+            while b + 1 < cols and occ[r, b + 1] == 0:
+                b += 1
+            hcc0, hcc1 = a, b
+
+        def positions(size, s0, s1, cover):
+            lo = max(s0, cover - size + 1)
+            hi = min(cover, s1 + 1 - size)
+            out = []
+            for p in (s0, s1 + 1 - size, cover - size // 2, cover, cover - size + 1):
+                if p < lo or p > hi:
+                    continue
+                gtop = p - s0
+                gbot = (s1 + 1) - (p + size)
+                if (gtop == 0 or gtop >= min_gap) and (gbot == 0 or gbot >= min_gap):
+                    out.append(p)
+            return out
+
+        cands = []
+        scanned = 0
+        for i in order:
+            if i in used:
+                continue
+            if scanned > 200:
+                break
+            scanned += 1
+            got = None
+            for w, h, rot, wc, hc in ori[i]:
+                if (occL or occR) and vr0 is not None and hc <= vr1 - vr0 + 1:
+                    c0, c1 = (c, c + wc) if occL else (c + 1 - wc, c + 1)
+                    for r0 in positions(hc, vr0, vr1, r):
+                        if fits(r0, r0 + hc, c0, c1) and no_sliver(r0, r0 + hc, c0, c1):
+                            got = (r0, r0 + hc, c0, c1, w, h, rot)
+                            break
+                if got is None and (occU or occD) and hcc0 is not None and wc <= hcc1 - hcc0 + 1:
+                    r0, r1 = (r, r + hc) if occU else (r + 1 - hc, r + 1)
+                    for c0 in positions(wc, hcc0, hcc1, c):
+                        if fits(r0, r1, c0, c0 + wc) and no_sliver(r0, r1, c0, c0 + wc):
+                            got = (r0, r1, c0, c0 + wc, w, h, rot)
+                            break
+                if got:
+                    break
+            if got:
+                cands.append((i, got))
+                if len(cands) >= 6:
+                    break
+        if not cands:
+            # Nothing fits here without leaving a <5cm sliver: leave the spot empty
+            # (a >=5cm fillable gap is fine; a thin unfillable sliver is not).
+            return None
+        i, (r0, r1, c0, c1, w, h, rot) = rng.choice(cands)
+        place(i, r0, r1, c0, c1, w, h, rot)
+        counts[1 if rot == 90 else 0] += 1
+        return r0, r1, c0, c1
+
     frontier: set = set()
 
     def add_frontier(r0, r1, c0, c1):
@@ -390,7 +500,7 @@ def solve_spiral(walls, negs, stones, params):
         frontier.discard((r, c))
         if mode != "beam":
             theta = ang
-        blk = place_flush(r, c) if mode == "beam" else place_best(r, c)
+        blk = place_beam5(r, c) if mode == "beam" else place_best(r, c)
         if blk is not None:
             add_frontier(*blk)
 
