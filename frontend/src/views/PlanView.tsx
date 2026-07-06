@@ -18,7 +18,7 @@ import {
   type Coverage,
   type Project,
 } from "../api/client";
-import { orthoSnap, polygonAreaCm2 } from "../geometry";
+import { orthoSnap, polygonAreaCm2, snapGrid, snapSegment } from "../geometry";
 
 type Tool = "pan" | "wall" | "negative" | "edit";
 
@@ -171,7 +171,14 @@ export default function PlanView() {
     const ptr = stage?.getPointerPosition();
     if (!ptr) return;
     let world = toWorld(ptr.x, ptr.y);
-    if (ortho && draft.length > 0) world = orthoSnap(draft[draft.length - 1], world);
+    if (draft.length > 0) {
+      const prev = draft[draft.length - 1];
+      // Ortho snaps to horizontal/vertical; otherwise snap the angle to 5 deg.
+      // Length/position snap to 1 cm (10 mm) either way.
+      world = ortho ? snapGrid(orthoSnap(prev, world)) : snapSegment(prev, world);
+    } else {
+      world = snapGrid(world);
+    }
     setDraft((d) => [...d, world]);
   }
 
@@ -480,7 +487,7 @@ export default function PlanView() {
                     onMouseDown={() => setSelectedId(s.id)}
                     onTouchStart={() => setSelectedId(s.id)}
                     onDragStart={() => setSelectedId(s.id)}
-                    onDragMove={(e) => updateVertex(s.id, i, [e.target.x(), e.target.y()])}
+                    onDragMove={(e) => updateVertex(s.id, i, snapGrid([e.target.x(), e.target.y()]))}
                   />
                 ))
               )}
