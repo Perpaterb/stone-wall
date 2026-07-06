@@ -7,7 +7,6 @@ import {
   createBuildMap,
   cropUrl,
   cutPlacement,
-  deleteAllPlacements,
   deletePlacement,
   fitStones,
   getBuildMap,
@@ -146,23 +145,6 @@ export default function BuildMapView() {
     }
   }
 
-  async function deleteAll() {
-    if (!bm) return;
-    if (!window.confirm(`Delete all ${total} placed stones from this build map?`)) return;
-    setBusy(true);
-    try {
-      await deleteAllPlacements(bm.id);
-      setSelPlacement(null);
-      setRect(null);
-      setFitList(null);
-      reload();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function cutSelected() {
     if (!selPlacement) return;
     setBusy(true);
@@ -228,6 +210,18 @@ export default function BuildMapView() {
   const total = bm?.placements.length ?? 0;
   const effectiveVisible = Math.min(visibleCount, total);
   const shown = bm ? bm.placements.slice(0, effectiveVisible) : [];
+
+  // Outline of how the current candidate stone sits in the dragged rectangle
+  // (anchored top-left; overhang beyond the rectangle is what gets cut off).
+  let preview: { pw: number; ph: number } | null = null;
+  if (manual && rect && fitList && fitList.length > 0) {
+    const s = fitList[fitI];
+    const rot = (rect.w >= rect.h) === (s.width_cm >= s.height_cm) ? 0 : 90;
+    preview = {
+      pw: rot === 90 ? s.height_cm : s.width_cm,
+      ph: rot === 90 ? s.width_cm : s.height_cm,
+    };
+  }
 
   const bounds = useMemo(() => {
     if (!bm) return null;
@@ -375,11 +369,6 @@ export default function BuildMapView() {
         >
           {manual ? "Manual: ON (drag a rectangle)" : "Manual edit"}
         </button>
-        {manual && (
-          <button onClick={deleteAll} disabled={busy || total === 0} style={{ color: "crimson" }}>
-            Delete all
-          </button>
-        )}
         <button
           onClick={() => setMarkMode((m) => !m)}
           style={{ fontWeight: markMode ? 700 : 400, background: markMode ? "#d9f2d9" : "#fff" }}
@@ -488,6 +477,18 @@ export default function BuildMapView() {
                 strokeWidth={2 / scale}
                 dash={[6 / scale, 4 / scale]}
                 fill="rgba(30,64,255,0.08)"
+                listening={false}
+              />
+            ) : null}
+            {preview && rect ? (
+              <Rect
+                x={rect.x}
+                y={rect.y}
+                width={preview.pw}
+                height={preview.ph}
+                stroke="#1f9d55"
+                strokeWidth={2.5 / scale}
+                fill="rgba(31,157,85,0.14)"
                 listening={false}
               />
             ) : null}
