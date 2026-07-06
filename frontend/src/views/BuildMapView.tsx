@@ -110,6 +110,38 @@ export default function BuildMapView() {
     }
   }
 
+  // Nudge one edge of the selection by 1mm and refresh the fitting stones.
+  function nudgeEdge(edge: "top" | "bottom" | "left" | "right", dir: -1 | 1) {
+    if (!rect || !bm) return;
+    const step = 0.1 * dir; // 1mm
+    let { x, y, w, h } = rect;
+    if (edge === "top") {
+      y += step;
+      h -= step;
+    } else if (edge === "bottom") {
+      h += step;
+    } else if (edge === "left") {
+      x += step;
+      w -= step;
+    } else {
+      w += step;
+    }
+    if (w < 1 || h < 1) return;
+    const nr = {
+      x: Math.round(x * 10) / 10,
+      y: Math.round(y * 10) / 10,
+      w: Math.round(w * 10) / 10,
+      h: Math.round(h * 10) / 10,
+    };
+    setRect(nr);
+    fitStones(bm.project_id, nr.w, nr.h)
+      .then((list) => {
+        setFitList(list);
+        setFitI(0);
+      })
+      .catch((e) => setError(String(e)));
+  }
+
   async function placeSelected() {
     if (!bm || !rect || !fitList || fitList.length === 0) return;
     const s = fitList[fitI];
@@ -581,6 +613,31 @@ export default function BuildMapView() {
         {manual && fitList && rect && (
           <div style={{ position: "absolute", left: 12, top: 12, background: "rgba(255,255,255,0.97)", border: "1px solid #1e40ff", borderRadius: 8, padding: "10px 12px", fontSize: 13, width: 240 }}>
             <div style={{ fontWeight: 700 }}>Rectangle {rect.w} x {rect.h} cm</div>
+            <div style={{ margin: "6px 0", fontSize: 12 }}>
+              <div style={{ color: "#555", marginBottom: 2 }}>Adjust edges (1mm):</div>
+              <div style={{ display: "grid", gridTemplateColumns: "50px auto", rowGap: 3, alignItems: "center" }}>
+                <span>Top</span>
+                <span>
+                  <button onClick={() => nudgeEdge("top", -1)}>&uarr;</button>{" "}
+                  <button onClick={() => nudgeEdge("top", 1)}>&darr;</button>
+                </span>
+                <span>Bottom</span>
+                <span>
+                  <button onClick={() => nudgeEdge("bottom", -1)}>&uarr;</button>{" "}
+                  <button onClick={() => nudgeEdge("bottom", 1)}>&darr;</button>
+                </span>
+                <span>Left</span>
+                <span>
+                  <button onClick={() => nudgeEdge("left", -1)}>&larr;</button>{" "}
+                  <button onClick={() => nudgeEdge("left", 1)}>&rarr;</button>
+                </span>
+                <span>Right</span>
+                <span>
+                  <button onClick={() => nudgeEdge("right", -1)}>&larr;</button>{" "}
+                  <button onClick={() => nudgeEdge("right", 1)}>&rarr;</button>
+                </span>
+              </div>
+            </div>
             <div style={{ margin: "4px 0" }}>{fitList.length} stones fit</div>
             {fitList.length > 0 ? (
               <>
