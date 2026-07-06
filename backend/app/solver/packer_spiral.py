@@ -21,7 +21,7 @@ from app.solver.geometry import region_intervals_at
 
 # Bump when the algorithm changes so the UI can show which version ran.
 VERSION = "spiral-5 (clockwise angular sweep, edge-cut, 50/50 rot)"
-BEAM_VERSION = "beam-6 (beam-5 + compaction pass to close small holes)"
+BEAM_VERSION = "beam-7 (per-seed round-robin, each grows around its own point)"
 
 
 def _orientations(stone):
@@ -597,9 +597,17 @@ def solve_spiral(walls, negs, stones, params):
     theta = 0.0
     safety = 0
     placed_since = 0
+    seed_i = 0
+    nseed = max(1, len(seed_points))
     max_iter = rows * cols
     while frontier and safety < max_iter:
         safety += 1
+        # In beam mode each seed takes a turn, growing around ITS OWN point (it
+        # ignores the other seeds); spiral mode sweeps around the shared centroid.
+        if mode == "beam" and seed_points:
+            tx, ty = seed_points[seed_i % nseed]
+        else:
+            tx, ty = sx, sy
         best = None
         best_key = None
         stale = []
@@ -609,13 +617,12 @@ def solve_spiral(walls, negs, stones, params):
                 continue
             x = ox + (c + 0.5) * cell
             y = oy + (r + 0.5) * cell
-            dist = math.hypot(x - sx, y - sy)
+            dist = math.hypot(x - tx, y - ty)
             if mode == "beam":
-                # Beam sweep: fill the closest empty spot to the seed. Ties -> any.
-                key = (dist, 0.0)
+                key = (dist, 0.0)  # nearest empty spot to this seed
                 ang = 0.0
             else:
-                ang = math.atan2(y - sy, x - sx)
+                ang = math.atan2(y - ty, x - tx)
                 key = ((ang - theta) % two_pi, dist)
             if best_key is None or key < best_key:
                 best_key = key
@@ -629,6 +636,8 @@ def solve_spiral(walls, negs, stones, params):
         if mode != "beam":
             theta = ang
         blk = place_beam5(r, c) if mode == "beam" else place_best(r, c)
+        if mode == "beam":
+            seed_i += 1  # next seed's turn
         if blk is not None:
             add_frontier(*blk)
             placed_since += 1
